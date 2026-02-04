@@ -11,31 +11,51 @@ class AppTheme {
     // Initialisation des tailles responsives
     AppSizes().initialize(context);
 
-    final textTheme = GoogleFonts.poppinsTextTheme().copyWith(
-      displayLarge: GoogleFonts.poppins(
+    final textTheme = GoogleFonts.robotoTextTheme().copyWith(
+      displayLarge: GoogleFonts.roboto(
         fontSize: AppSizes().h1,
         fontWeight: FontWeight.bold,
         color: colorScheme.onSurface,
       ),
-      displayMedium: GoogleFonts.poppins(
+      displayMedium: GoogleFonts.roboto(
         fontSize: AppSizes().h2,
         fontWeight: FontWeight.bold,
         color: colorScheme.onSurface,
       ),
-      bodyLarge: GoogleFonts.inter(
+      displaySmall: GoogleFonts.roboto(
+        fontSize: AppSizes().h3,
+        fontWeight: FontWeight.bold,
+        color: colorScheme.onSurface,
+      ),
+      bodyLarge: GoogleFonts.roboto(
         fontSize: AppSizes().bodyLarge,
         fontWeight: FontWeight.w400,
         color: colorScheme.onSurface,
       ),
-      bodyMedium: GoogleFonts.inter(
+      bodyMedium: GoogleFonts.roboto(
         fontSize: AppSizes().bodyMedium,
         fontWeight: FontWeight.w400,
         color: colorScheme.onSurface,
       ),
-      labelLarge: GoogleFonts.poppins(
-        fontSize: AppSizes().bodyMedium,
-        fontWeight: FontWeight.w600,
+      bodySmall: GoogleFonts.roboto(
+        fontSize: AppSizes().bodySmall,
+        fontWeight: FontWeight.w400,
+        color: colorScheme.onSurface,
+      ),
+      labelLarge: GoogleFonts.roboto(
+        fontSize: AppSizes().buttonText,
+        fontWeight: FontWeight.w500,
         color: colorScheme.primary,
+      ),
+      labelMedium: GoogleFonts.roboto(
+        fontSize: AppSizes().label,
+        fontWeight: FontWeight.w500,
+        color: colorScheme.onSurface,
+      ),
+      labelSmall: GoogleFonts.roboto(
+        fontSize: AppSizes().caption,
+        fontWeight: FontWeight.w400,
+        color: colorScheme.onSurface,
       ),
     );
 
@@ -98,7 +118,7 @@ class AppTheme {
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: GoogleFonts.poppins(
+        titleTextStyle: GoogleFonts.roboto(
           fontSize: AppSizes().h3,
           fontWeight: FontWeight.w600,
           color: colorScheme.onSurface,
@@ -112,7 +132,7 @@ class AppTheme {
 
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colorScheme.error,
-        contentTextStyle: GoogleFonts.inter(
+        contentTextStyle: GoogleFonts.roboto(
           fontSize: AppSizes().bodyMedium,
           color: colorScheme.onError,
         ),

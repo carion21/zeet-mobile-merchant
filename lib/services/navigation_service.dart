@@ -1,20 +1,35 @@
 // lib/services/navigation_service.dart
 import 'package:flutter/material.dart';
+import 'package:merchant/screens/splash/index.dart';
+import 'package:merchant/screens/auth/login/index.dart';
+import 'package:merchant/screens/auth/verify_otp/index.dart';
+import 'package:merchant/screens/home/index.dart';
+import 'package:merchant/screens/orders/index.dart';
+import 'package:merchant/screens/order_details/index.dart';
+import 'package:merchant/screens/profile/index.dart';
+import 'package:merchant/screens/menu/index.dart';
+import 'package:merchant/screens/food_details/index.dart';
 
 class Routes {
   // GlobalKey unique pour le Navigator
   static final navigatorKey = GlobalKey<NavigatorState>();
 
   // Définition des routes statiques
-  static const String home = '/';
+  static const String splash = '/';
+  static const String home = '/home';
+  static const String login = '/login';
+  static const String orders = '/orders';
+  static const String profile = '/profile';
+  static const String menu = '/menu';
 
   // Définition des constructeurs de widgets pour chaque route
   static final Map<String, WidgetBuilder> routes = {
-    home: (context) => const Scaffold(
-      body: Center(
-        child: Text('Merchant App - Home'),
-      ),
-    ),
+    splash: (context) => const SplashScreen(),
+    login: (context) => const LoginScreen(),
+    home: (context) => const HomeScreen(),
+    orders: (context) => const OrdersScreen(),
+    profile: (context) => const ProfileScreen(),
+    menu: (context) => const MenuScreen(),
   };
 
   // Navigation standard avec animation personnalisée
@@ -31,6 +46,78 @@ class Routes {
     return navigatorKey.currentState!.push<T>(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => page,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  // Navigation spéciale pour l'écran de vérification OTP avec paramètres
+  static Future<T?> pushVerifyOtp<T>({
+    required String phoneNumber,
+    String? fullName,
+    required String type,
+  }) {
+    if (navigatorKey.currentState == null) return Future.value(null);
+
+    return navigatorKey.currentState!.push<T>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => VerifyOtpScreen(
+          phoneNumber: phoneNumber,
+          fullName: fullName,
+          type: type,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  // Navigation vers les détails de commande
+  static Future<T?> pushOrderDetails<T>(String orderId) {
+    if (navigatorKey.currentState == null) return Future.value(null);
+
+    return navigatorKey.currentState!.push<T>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => OrderDetailsScreen(
+          orderId: orderId,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          const curve = Curves.easeInOut;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  // Navigation vers les détails d'un plat
+  static Future<T?> pushFoodDetails<T>(String foodId) {
+    if (navigatorKey.currentState == null) return Future.value(null);
+
+    return navigatorKey.currentState!.push<T>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => FoodDetailsScreen(
+          foodId: foodId,
+        ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(1.0, 0.0);
           const end = Offset.zero;
@@ -111,12 +198,12 @@ class Routes {
     // Récupérer le builder pour la route demandée
     final routeBuilder = routes[settings.name];
 
-    // Si la route n'existe pas, retourner à l'écran d'accueil
+    // Si la route n'existe pas, retourner à l'écran splash
     if (routeBuilder == null) {
       // Return a default route if the requested route is not found
       return MaterialPageRoute(
-        builder: routes[home] ?? ((context) => const Scaffold(body: Center(child: Text('Route non trouvée')))),
-        settings: const RouteSettings(name: home),
+        builder: routes[splash] ?? ((context) => const Scaffold(body: Center(child: Text('Route non trouvée')))),
+        settings: const RouteSettings(name: splash),
       );
     }
 

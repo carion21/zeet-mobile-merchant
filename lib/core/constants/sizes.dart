@@ -75,12 +75,15 @@ class AppSizes {
     return size * scaleFactor;
   }
 
-  double get h1 => scaledFontSize(28.0);
-  double get h2 => scaledFontSize(24.0);
-  double get h3 => scaledFontSize(20.0);
+  double get h1 => scaledFontSize(24.0);  // Optimisé selon Material Design 3
+  double get h2 => scaledFontSize(20.0);
+  double get h3 => scaledFontSize(18.0);
   double get bodyLarge => scaledFontSize(16.0);
   double get bodyMedium => scaledFontSize(14.0);
   double get bodySmall => scaledFontSize(12.0);
+  double get buttonText => scaledFontSize(15.0);  // Nouveau
+  double get label => scaledFontSize(13.0);       // Nouveau
+  double get caption => scaledFontSize(11.0);     // Nouveau
 
   // Line heights
   double get lineHeightLarge => 1.6;
