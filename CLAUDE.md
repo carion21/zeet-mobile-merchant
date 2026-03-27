@@ -345,33 +345,45 @@ class MenuNotifier extends StateNotifier<List<Product>> {
 }
 ```
 
-## Next Steps
+## API Integration
 
-This is a base setup for the Merchant app. The following needs to be implemented:
+### Document de suivi
+**IMPORTANT :** Le fichier `API_ENDPOINTS.md` à la racine du projet contient la liste complète des 80 endpoints API avec leur statut d'intégration. Ce document **DOIT** être mis à jour à la fin de chaque groupe d'intégration :
+- Mettre le statut à `Implémenté` pour chaque endpoint intégré
+- Mettre le statut à `À revoir` si un endpoint a un problème de parsing ou d'incohérence
+- Mettre à jour le tableau résumé en bas du document
+- Mettre à jour la date de dernière mise à jour
 
-### Core Features
-- **Authentication screens** (login, register, OTP verification)
-- **Menu management** (product list, add/edit product, categories)
-- **Order management** (active orders, order history, order details)
-- **Analytics & Reports** (sales analytics, performance metrics)
-- **Profile & Settings** (restaurant info, opening hours, preferences)
+### Architecture d'intégration API
+Pattern : `models → services → providers → screens`
 
-### Models to Create
-- `Product` - Menu item information
-- `Category` - Product categories
-- `Order` - Customer order details
-- `MerchantProfile` - Restaurant information
-- `Analytics` - Sales and performance data
-- `OpeningHours` - Restaurant schedule
+| Couche | Rôle | Répertoire |
+|--------|------|-----------|
+| **Models** | Parsing JSON, classes de données | `lib/models/` |
+| **Services** | Appels HTTP via ApiClient | `lib/services/` |
+| **Providers** | State Riverpod + logique métier | `lib/providers/` |
+| **Screens** | UI, ConsumerStatefulWidget | `lib/screens/` |
 
-### Providers to Create
-- `menuProvider` - Manage products and menu
-- `orderProvider` - Manage incoming orders
-- `merchantProfileProvider` - Manage restaurant profile
-- `analyticsProvider` - Track sales and metrics
-- `categoryProvider` - Manage product categories
+### Infrastructure API (à créer en premier)
+- `lib/services/api_client.dart` — Client HTTP centralisé (singleton, auth headers Bearer, refresh auto 401, logging via ApiLogger). Le parsing d'erreur doit gérer `message` comme String OU List (validation NestJS).
+- `lib/services/token_service.dart` — Stockage tokens via SharedPreferences (préfixe `zeet_merchant_`).
+- `lib/core/utils/api_logger.dart` — **EXISTE DÉJÀ** — Logging des requêtes/réponses API.
 
-### Services to Implement
-- `api_service.dart` - HTTP client for API calls
-- `notification_service.dart` - Push notifications for new orders
-- `analytics_service.dart` - Track business metrics
+### Spécificités Partner
+- **Auth par login/password** (pas OTP comme client/rider) : `POST /v1/auth/login` avec `{"phone", "password", "surface": "partner"}`
+- **Le partner est un restaurateur** — gestion de menus, produits, catégories, commandes entrantes
+- **Endpoints** : tous les endpoints sont définis dans `lib/core/constants/api.dart`
+- **Collection Postman** : `/Users/lycoris/workspace/zeet/ZEET-Core-API.postman_collection.json`
+
+### Ordre d'intégration recommandé
+1. Auth (4) — login, refresh, logout, me
+2. Profile + Dashboard (7) — profil, commission, disponibilité, logo, summary
+3. Orders (12) — liste, détail, actions (confirm/preparing/ready/cancel), OTP
+4. Menus (6) — CRUD menus + publish
+5. Product Categories (8) — CRUD catégories + image + bulk
+6. Products (11) + Variants (4) + Option Groups (8) — CRUD complet
+7. Stats (6) + Product Stats (2)
+8. Carts (2) + Support Tickets (10)
+
+### Référence
+L'app client (`/Users/lycoris/workspace/zeet/zeet-mobile-client/`) et l'app rider (`/Users/lycoris/workspace/zeet/zeet-mobile-rider/`) ont déjà une intégration complète qui peut servir de modèle pour les services, models et providers.
