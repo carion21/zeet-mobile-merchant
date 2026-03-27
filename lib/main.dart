@@ -8,6 +8,7 @@ import 'package:merchant/core/constants/themes.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:merchant/providers/theme_provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:merchant/services/token_service.dart';
 
 void main() async {
   // Assurer que l'initialisation des widgets est complète
@@ -15,6 +16,9 @@ void main() async {
 
   // Initialiser la locale française pour les dates
   await initializeDateFormatting('fr_FR', null);
+
+  // Initialiser le service de tokens (SharedPreferences)
+  await TokenService.instance.init();
 
   // Définir l'orientation de l'application
   SystemChrome.setPreferredOrientations([
