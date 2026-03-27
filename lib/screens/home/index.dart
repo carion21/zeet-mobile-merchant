@@ -6,6 +6,8 @@ import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/constants/assets.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/dashboard_provider.dart';
+import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:intl/intl.dart';
@@ -24,6 +26,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // Charger le dashboard, le profil et les commandes au demarrage
+    Future.microtask(() {
+      ref.read(dashboardProvider.notifier).loadSummary();
+      ref.read(profileProvider.notifier).loadProfile();
+      ref.read(ordersListProvider.notifier).load();
+    });
   }
 
   @override
@@ -40,8 +49,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final textColor = isDark ? AppColors.darkText : AppColors.text;
     final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
 
-    final newOrdersCount = ref.watch(newOrdersCountProvider);
-    final todayEarnings = ref.watch(todayEarningsProvider);
+    final pendingCount = ref.watch(pendingOrdersCountProvider);
+    final dashboardSummary = ref.watch(dashboardProvider).summary;
+    final double todayEarnings = dashboardSummary?.revenueToday ?? 0;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -49,9 +59,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         child: Column(
           children: [
             // Header moderne
-            _buildModernHeader(textColor, textLightColor, newOrdersCount),
+            _buildModernHeader(textColor, textLightColor, pendingCount),
 
-            // Contenu défilable
+            // Contenu defilable
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
@@ -71,7 +81,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     SizedBox(height: 20.h),
 
                     // Section des commandes
-                    _buildOrdersSection(textColor, textLightColor, surfaceColor, newOrdersCount),
+                    _buildOrdersSection(textColor, textLightColor, surfaceColor, pendingCount),
 
                     SizedBox(height: 20.h),
                   ],
@@ -81,20 +91,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           ],
         ),
       ),
-      floatingActionButton: newOrdersCount > 0 ? _buildNewOrdersFAB(newOrdersCount) : null,
+      floatingActionButton: pendingCount > 0 ? _buildNewOrdersFAB(pendingCount) : null,
     );
   }
 
   Widget _buildModernHeader(Color textColor, Color textLightColor, int newOrdersCount) {
+    final partnerProfile = ref.watch(partnerDataProvider);
+    final restaurantName = partnerProfile?.name ?? 'Mon Restaurant';
+    final isOpen = partnerProfile?.openNow ?? false;
+
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
       child: Stack(
         children: [
-          // Row pour les éléments gauche et droite
+          // Row pour les elements gauche et droite
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Icône profil à gauche
+              // Icone profil a gauche (avec logo si disponible)
               GestureDetector(
                 onTap: () {
                   Routes.navigateTo(Routes.profile);
@@ -105,14 +119,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
+                    image: partnerProfile?.picture != null
+                        ? DecorationImage(
+                            image: NetworkImage(partnerProfile!.picture!),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
-                  child: Center(
-                    child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
-                  ),
+                  child: partnerProfile?.picture == null
+                      ? Center(
+                          child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                        )
+                      : null,
                 ),
               ),
 
-              // Notification à droite
+              // Notification a droite
               IconButton(
                 onPressed: () {
                   // TODO: Navigate to notifications
@@ -150,13 +172,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ],
           ),
 
-          // Nom du restaurant centré
+          // Nom du restaurant centre
           Center(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  'Mon Restaurant',
+                  restaurantName,
                   style: TextStyle(
                     color: textColor.withValues(alpha: textColor.a * 0.7),
                     fontSize: 12.sp,
@@ -170,13 +192,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       width: 7.w,
                       height: 7.h,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4CD964),
+                        color: isOpen ? const Color(0xFF4CD964) : Colors.grey,
                         shape: BoxShape.circle,
                       ),
                     ),
                     SizedBox(width: 5.w),
                     Text(
-                      'Ouvert',
+                      isOpen ? 'Ouvert' : 'Ferme',
                       style: TextStyle(
                         color: textColor,
                         fontWeight: FontWeight.w600,
@@ -252,8 +274,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   Widget _buildCompactStats(Color textColor, Color textLightColor, Color surfaceColor, bool isDark) {
-    final newOrdersCount = ref.watch(newOrdersCountProvider);
-    final activeOrders = ref.watch(activeOrdersProvider).length;
+    final ordersToday = ref.watch(ordersTodayProvider);
+    final rating = ref.watch(ratingProvider);
+    final activeCarts = ref.watch(activeCartsProvider);
 
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
@@ -269,13 +292,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       ),
       child: Row(
         children: [
-          // Nouvelles commandes
+          // Commandes du jour
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Nouvelles',
+                  'Commandes',
                   style: TextStyle(
                     color: textLightColor,
                     fontSize: 12.sp,
@@ -285,10 +308,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 SizedBox(height: 6.h),
                 Row(
                   children: [
-                    IconManager.getIcon('notifications', color: const Color(0xFFFFA500), size: 18.r),
+                    IconManager.getIcon('shopping_bag', color: const Color(0xFFFFA500), size: 18.r),
                     SizedBox(width: 6.w),
                     Text(
-                      '$newOrdersCount',
+                      '$ordersToday',
                       style: TextStyle(
                         color: textColor,
                         fontSize: 20.sp,
@@ -302,24 +325,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           ),
 
           // Divider vertical
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.w),
-            child: Container(
-              width: 1.w,
-              height: 40.h,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.grey.withValues(alpha: 0.15),
-            ),
-          ),
+          _buildVerticalDivider(isDark),
 
-          // Commandes en cours
+          // Note moyenne
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'En cours',
+                  'Note',
                   style: TextStyle(
                     color: textLightColor,
                     fontSize: 12.sp,
@@ -329,10 +343,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 SizedBox(height: 6.h),
                 Row(
                   children: [
-                    IconManager.getIcon('shopping_bag', color: AppColors.primary, size: 18.r),
+                    IconManager.getIcon('star', color: const Color(0xFFFFD700), size: 18.r),
                     SizedBox(width: 6.w),
                     Text(
-                      '$activeOrders',
+                      rating > 0 ? rating.toStringAsFixed(1) : '--',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 20.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Divider vertical
+          _buildVerticalDivider(isDark),
+
+          // Paniers actifs
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Paniers',
+                  style: TextStyle(
+                    color: textLightColor,
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 6.h),
+                Row(
+                  children: [
+                    IconManager.getIcon('shopping_cart', color: AppColors.primary, size: 18.r),
+                    SizedBox(width: 6.w),
+                    Text(
+                      '$activeCarts',
                       style: TextStyle(
                         color: textColor,
                         fontSize: 20.sp,
@@ -345,6 +394,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalDivider(bool isDark) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8.w),
+      child: Container(
+        width: 1.w,
+        height: 40.h,
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.1)
+            : Colors.grey.withValues(alpha: 0.15),
       ),
     );
   }
@@ -436,7 +498,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   Widget _buildNewOrdersFAB(int newOrdersCount) {
     return FloatingActionButton(
       onPressed: () {
-        // Passer directement à l'onglet "Nouvelles"
+        // Passer directement a l'onglet "Nouvelles"
         _tabController.animateTo(0);
       },
       backgroundColor: AppColors.primary,
@@ -481,34 +543,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   Widget _buildNewOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
-    final newOrders = ref.watch(newOrdersProvider);
+    final ordersState = ref.watch(ordersListProvider);
+    final pendingOrders = ordersState.pendingOrders;
 
-    if (newOrders.isEmpty) {
-      return _buildEmptyState('Aucune nouvelle commande', 'Les nouvelles commandes apparaîtront ici');
+    if (ordersState.status == OrdersListStatus.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (pendingOrders.isEmpty) {
+      return _buildEmptyState('Aucune nouvelle commande', 'Les nouvelles commandes apparaitront ici');
     }
 
     return ListView.builder(
       padding: EdgeInsets.symmetric(vertical: 8.h),
-      itemCount: newOrders.length,
+      itemCount: pendingOrders.length,
       itemBuilder: (context, index) {
-        final order = newOrders[index];
+        final order = pendingOrders[index];
         return _buildOrderCard(order, surfaceColor, textColor, textLightColor, showActions: true);
       },
     );
   }
 
   Widget _buildActiveOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
-    final activeOrders = ref.watch(activeOrdersProvider);
+    final ordersState = ref.watch(ordersListProvider);
+    final active = ordersState.activeOrders;
 
-    if (activeOrders.isEmpty) {
-      return _buildEmptyState('Aucune commande en cours', 'Les commandes actives apparaîtront ici');
+    if (ordersState.status == OrdersListStatus.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (active.isEmpty) {
+      return _buildEmptyState('Aucune commande en cours', 'Les commandes actives apparaitront ici');
     }
 
     return ListView.builder(
       padding: EdgeInsets.symmetric(vertical: 8.h),
-      itemCount: activeOrders.length,
+      itemCount: active.length,
       itemBuilder: (context, index) {
-        final order = activeOrders[index];
+        final order = active[index];
         return _buildOrderCard(order, surfaceColor, textColor, textLightColor);
       },
     );
@@ -557,7 +629,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       child: Row(
                         children: [
                           Text(
-                            '#${order.id}',
+                            '#${order.code ?? order.id}',
                             style: TextStyle(
                               fontSize: 16.sp,
                               fontWeight: FontWeight.w600,
@@ -575,7 +647,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         ],
                       ),
                     ),
-                    _buildStatusBadge(order.status, textLightColor),
+                    _buildStatusBadge(order.orderStatus, textLightColor),
                   ],
                 ),
                 SizedBox(height: 12.h),
@@ -591,15 +663,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         style: TextStyle(fontSize: 14.sp, color: textColor),
                       ),
                     ),
-                    IconButton(
-                      icon: IconManager.getIcon('phone', size: 20.r, color: AppColors.primary),
-                      onPressed: () {
-                        // TODO: Call customer
-                        AppToast.showInfo(context: context, message: 'Appel: ${order.customerPhone}');
-                      },
-                      constraints: BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                    ),
+                    if (order.customerPhone.isNotEmpty)
+                      IconButton(
+                        icon: IconManager.getIcon('phone', size: 20.r, color: AppColors.primary),
+                        onPressed: () {
+                          AppToast.showInfo(context: context, message: 'Appel: ${order.customerPhone}');
+                        },
+                        constraints: BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                      ),
                   ],
                 ),
                 SizedBox(height: 8.h),
@@ -613,13 +685,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         IconManager.getIcon('shopping_bag', size: 16.r, color: textLightColor),
                         SizedBox(width: 8.w),
                         Text(
-                          '${order.items.length} article${order.items.length > 1 ? 's' : ''}',
+                          order.items.isNotEmpty
+                              ? '${order.items.length} article${order.items.length > 1 ? 's' : ''}'
+                              : 'Commande',
                           style: TextStyle(fontSize: 14.sp, color: textLightColor),
                         ),
                       ],
                     ),
                     Text(
-                      currencyFormat.format(order.totalAmount),
+                      currencyFormat.format(order.totalAmount ?? 0),
                       style: TextStyle(
                         fontSize: 18.sp,
                         fontWeight: FontWeight.bold,
@@ -643,10 +717,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
-                        ref.read(ordersProvider.notifier).acceptOrder(order.id);
-                        AppToast.showSuccess(context: context, message: 'Commande acceptée');
-                      },
+                      onPressed: () => _confirmOrder(order),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -659,10 +730,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   SizedBox(width: 12.w),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () {
-                        ref.read(ordersProvider.notifier).rejectOrder(order.id);
-                        AppToast.showWarning(context: context, message: 'Commande refusée');
-                      },
+                      onPressed: () => _cancelOrder(order),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primary,
                         side: BorderSide(color: AppColors.primary),
@@ -681,29 +749,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildStatusBadge(OrderStatus status, Color textLightColor) {
+  Future<void> _confirmOrder(Order order) async {
+    final notifier = ref.read(orderDetailProvider.notifier);
+    final success = await notifier.confirm(order.id);
+    if (success && mounted) {
+      AppToast.showSuccess(context: context, message: 'Commande confirmee');
+      ref.read(ordersListProvider.notifier).refresh();
+    } else if (mounted) {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur lors de la confirmation');
+    }
+  }
+
+  Future<void> _cancelOrder(Order order) async {
+    final reason = await _showCancelDialog();
+    if (reason == null || !mounted) return;
+
+    final notifier = ref.read(orderDetailProvider.notifier);
+    final success = await notifier.cancel(order.id, cancelReason: reason);
+    if (success && mounted) {
+      AppToast.showWarning(context: context, message: 'Commande refusee');
+      ref.read(ordersListProvider.notifier).refresh();
+    } else if (mounted) {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur lors de l\'annulation');
+    }
+  }
+
+  Future<String?> _showCancelDialog() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Refuser la commande'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Raison du refus...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final reason = controller.text.trim();
+              if (reason.isNotEmpty) {
+                Navigator.pop(context, reason);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(OrderStatus? status, Color textLightColor) {
+    if (status == null) return const SizedBox.shrink();
+
     Color bgColor;
-    switch (status) {
-      case OrderStatus.pending:
-        bgColor = const Color(0xFFFFA500);
-        break;
-      case OrderStatus.preparing:
-        bgColor = const Color(0xFF2196F3);
-        break;
-      case OrderStatus.ready:
-        bgColor = const Color(0xFF4CD964);
-        break;
-      case OrderStatus.pickedUp:
-        bgColor = const Color(0xFF9C27B0);
-        break;
-      case OrderStatus.delivered:
-        bgColor = const Color(0xFF4CAF50);
-        break;
-      case OrderStatus.cancelled:
-        bgColor = AppColors.error;
-        break;
-      default:
-        bgColor = textLightColor;
+    final colorStr = status.color;
+    if (colorStr != null && colorStr.startsWith('#')) {
+      try {
+        bgColor = Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
+      } catch (_) {
+        bgColor = _fallbackStatusColor(status.value);
+      }
+    } else {
+      bgColor = _fallbackStatusColor(status.value);
     }
 
     return Container(
@@ -713,7 +835,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         borderRadius: BorderRadius.circular(4.r),
       ),
       child: Text(
-        status.label,
+        status.displayLabel,
         style: TextStyle(
           fontSize: 11.sp,
           fontWeight: FontWeight.w600,
@@ -721,6 +843,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         ),
       ),
     );
+  }
+
+  Color _fallbackStatusColor(String? value) {
+    switch (value) {
+      case 'pending':
+        return const Color(0xFFFFA500);
+      case 'confirmed':
+        return const Color(0xFF2196F3);
+      case 'preparing':
+        return const Color(0xFF2196F3);
+      case 'ready':
+        return const Color(0xFF4CD964);
+      case 'picked_up':
+        return const Color(0xFF9C27B0);
+      case 'delivered':
+        return const Color(0xFF4CAF50);
+      case 'cancelled':
+        return AppColors.error;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildEmptyState(String title, String subtitle) {
@@ -753,17 +896,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     );
   }
 
-  String _getTimeAgo(DateTime dateTime) {
-    final diff = DateTime.now().difference(dateTime);
+  String _getTimeAgo(String? dateTimeStr) {
+    if (dateTimeStr == null) return '';
 
-    if (diff.inMinutes < 1) {
-      return 'À l\'instant';
-    } else if (diff.inMinutes < 60) {
-      return 'Il y a ${diff.inMinutes} min';
-    } else if (diff.inHours < 24) {
-      return 'Il y a ${diff.inHours}h';
-    } else {
-      return 'Il y a ${diff.inDays}j';
+    try {
+      final dateTime = DateTime.parse(dateTimeStr);
+      final diff = DateTime.now().difference(dateTime);
+
+      if (diff.inMinutes < 1) {
+        return 'A l\'instant';
+      } else if (diff.inMinutes < 60) {
+        return 'Il y a ${diff.inMinutes} min';
+      } else if (diff.inHours < 24) {
+        return 'Il y a ${diff.inHours}h';
+      } else {
+        return 'Il y a ${diff.inDays}j';
+      }
+    } catch (_) {
+      return '';
     }
   }
 }

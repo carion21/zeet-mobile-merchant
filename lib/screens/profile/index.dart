@@ -5,7 +5,11 @@ import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
+import 'package:merchant/providers/auth_provider.dart';
+import 'package:merchant/providers/profile_provider.dart';
+import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:intl/intl.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -15,21 +19,31 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  // Données fictives
-  final String restaurantName = 'Chez Maman';
-  final String phoneNumber = '+225 07 00 00 00 00';
-  final String email = 'contact@chezmaman.com';
-  final String address = 'Cocody, Angré 7ème Tranche';
-
   bool isEditing = false;
   bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Charger le profil et le dashboard si pas encore fait
+    Future.microtask(() {
+      final pState = ref.read(profileProvider);
+      if (pState.status == ProfileStatus.initial) {
+        ref.read(profileProvider.notifier).loadAll();
+      }
+      final dState = ref.read(dashboardProvider);
+      if (dState.status == DashboardStatus.initial) {
+        ref.read(dashboardProvider.notifier).loadSummary();
+      }
+    });
+  }
 
   Future<void> _confirmLogout() async {
     final bool confirm = await AppPopup.showConfirmation(
       context: context,
-      title: 'Déconnexion',
-      message: 'Êtes-vous sûr de vouloir vous déconnecter ?',
-      confirmLabel: 'Déconnexion',
+      title: 'Deconnexion',
+      message: 'Etes-vous sur de vouloir vous deconnecter ?',
+      confirmLabel: 'Deconnexion',
       cancelLabel: 'Annuler',
       isDestructive: true,
     );
@@ -37,8 +51,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (!mounted) return;
 
     if (confirm) {
-      AppToast.showSuccess(context: context, message: 'Déconnexion réussie');
-      // Rediriger vers la page de connexion
+      await ref.read(authProvider.notifier).logout();
+      if (!mounted) return;
+      AppToast.showSuccess(context: context, message: 'Deconnexion reussie');
       Routes.navigateAndRemoveAll(Routes.login);
     }
   }
@@ -123,34 +138,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildProfileHeader(Color textColor) {
-    String initials = restaurantName.split(' ').map((word) => word[0]).take(2).join().toUpperCase();
+    final authState = ref.watch(authProvider);
+    final partnerProfile = ref.watch(partnerDataProvider);
+    final partner = authState.partner;
+    final displayName = partnerProfile?.name ?? partner?.restaurantName ?? 'Mon Restaurant';
+    final displayPhone = partner != null ? '+225 ${partner.phone}' : '';
+    final logoUrl = partnerProfile?.picture ?? partner?.partner?.picture;
+
+    String initials = displayName
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((word) => word[0])
+        .take(2)
+        .join()
+        .toUpperCase();
+    if (initials.isEmpty) initials = 'MR';
 
     return Column(
       children: [
-        // Avatar avec initiales
+        // Avatar avec initiales ou photo
         Container(
           width: 100.w,
           height: 100.h,
           decoration: BoxDecoration(
             color: AppColors.primary,
             shape: BoxShape.circle,
+            image: logoUrl != null
+                ? DecorationImage(
+                    image: NetworkImage(logoUrl),
+                    fit: BoxFit.cover,
+                  )
+                : null,
           ),
-          child: Center(
-            child: Text(
-              initials,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 32.sp,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
+          child: logoUrl == null
+              ? Center(
+                  child: Text(
+                    initials,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 32.sp,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              : null,
         ),
         SizedBox(height: 16.h),
 
         // Nom du restaurant
         Text(
-          restaurantName,
+          displayName,
           style: TextStyle(
             color: textColor,
             fontSize: 20.sp,
@@ -158,21 +195,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
         ),
 
-        // Numéro de téléphone
+        // Numero de telephone
         SizedBox(height: 4.h),
         Text(
-          phoneNumber,
+          displayPhone,
           style: TextStyle(
             color: AppColors.primary,
             fontSize: 16.sp,
             fontWeight: FontWeight.w500,
           ),
         ),
+
+        // Adresse si disponible
+        if (partnerProfile?.address != null || partner?.partner?.address != null) ...[
+          SizedBox(height: 4.h),
+          Text(
+            partnerProfile?.address ?? partner!.partner!.address!,
+            style: TextStyle(
+              color: textColor.withValues(alpha: 0.7),
+              fontSize: 13.sp,
+            ),
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildStatsCard(Color textColor, Color textLightColor, Color surfaceColor, bool isDark) {
+    final ordersToday = ref.watch(ordersTodayProvider);
+    final revenueToday = ref.watch(revenueTodayProvider);
+    final rating = ref.watch(ratingProvider);
+    final currencyFormat = NumberFormat.compact(locale: 'fr_FR');
+    final commissionRate = ref.watch(commissionRateProvider);
+
     return Container(
       padding: EdgeInsets.all(20.w),
       decoration: BoxDecoration(
@@ -204,7 +259,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Expanded(
                 child: _buildStatItem(
                   label: 'Commandes',
-                  value: '12',
+                  value: '$ordersToday',
                   textColor: textColor,
                   textLightColor: textLightColor,
                 ),
@@ -217,7 +272,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Expanded(
                 child: _buildStatItem(
                   label: 'Gains',
-                  value: '45K',
+                  value: revenueToday > 0 ? currencyFormat.format(revenueToday) : '0',
                   textColor: textColor,
                   textLightColor: textLightColor,
                 ),
@@ -230,13 +285,45 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Expanded(
                 child: _buildStatItem(
                   label: 'Note',
-                  value: '4.8',
+                  value: rating > 0 ? rating.toStringAsFixed(1) : '--',
                   textColor: textColor,
                   textLightColor: textLightColor,
                 ),
               ),
             ],
           ),
+
+          // Taux de commission (si disponible)
+          if (commissionRate != null) ...[
+            SizedBox(height: 16.h),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8.r),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Commission : ',
+                    style: TextStyle(
+                      color: textLightColor,
+                      fontSize: 13.sp,
+                    ),
+                  ),
+                  Text(
+                    '${commissionRate.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
