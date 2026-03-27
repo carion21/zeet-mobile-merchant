@@ -17,6 +17,7 @@ class IconManager {
     'email': Icons.email_outlined,
     'phone': Icons.phone_outlined,
     'password': Icons.lock_outline,
+    'lock': Icons.lock_outline,
     'visibility_on': Icons.visibility,
     'visibility_off': Icons.visibility_off,
     'check': Icons.check_circle,
@@ -91,6 +92,8 @@ class IconManager {
     'motorcycle': Icons.two_wheeler,
     'receipt': Icons.receipt_long,
     'filter_list': Icons.filter_list,
+    'shopping_cart': Icons.shopping_cart,
+    'note': Icons.sticky_note_2_outlined,
   };
 
   // Icônes Cupertino pour iOS
@@ -107,6 +110,7 @@ class IconManager {
     'email': CupertinoIcons.mail,
     'phone': CupertinoIcons.phone,
     'password': CupertinoIcons.lock,
+    'lock': CupertinoIcons.lock,
     'visibility_on': CupertinoIcons.eye,
     'visibility_off': CupertinoIcons.eye_slash,
     'check': CupertinoIcons.check_mark_circled,
@@ -181,6 +185,8 @@ class IconManager {
     'motorcycle': CupertinoIcons.cube_box,
     'receipt': CupertinoIcons.list_bullet,
     'filter_list': CupertinoIcons.line_horizontal_3_decrease,
+    'shopping_cart': CupertinoIcons.cart_fill,
+    'note': CupertinoIcons.doc_text,
   };
 
   static Icon getIcon(String iconName, {Color? color, double? size}) {

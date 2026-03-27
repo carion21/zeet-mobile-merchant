@@ -1,21 +1,24 @@
 // screens/auth/login/index.dart
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/sizes.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/providers/auth_provider.dart';
+import 'package:merchant/services/navigation_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'controllers.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   late final LoginController _controller;
 
   @override
@@ -36,23 +39,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _controller.isLoading = true);
 
-    final result = await _controller.handleSubmit();
+    final error = await ref.read(authProvider.notifier).login(
+          phone: _controller.phoneController.text,
+          password: _controller.passwordController.text,
+        );
 
+    if (!mounted) return;
     setState(() => _controller.isLoading = false);
 
-    if (result['success']) {
-      // Afficher un message de succès
+    if (error == null) {
+      // Succes : naviguer vers l'ecran principal
       AppToast.showSuccess(
         context: context,
-        message: "Un code a été envoyé au ${_controller.formatPhoneNumber(_controller.phoneController.text)}",
+        message: 'Connexion reussie',
       );
-
-      // La navigation est gérée dans le controller
+      Routes.navigateAndRemoveAll(Routes.home);
     } else {
-      // Afficher un message d'erreur
+      // Erreur : afficher le message
       AppToast.showError(
         context: context,
-        message: result['message'] ?? "Une erreur s'est produite",
+        message: error,
       );
     }
   }
@@ -71,15 +77,15 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: backgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Form(
             key: _controller.formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(height: 60),
+                const SizedBox(height: 60),
 
-                // Logo centré
+                // Logo centre
                 Container(
                   width: 80.w,
                   height: 80.h,
@@ -94,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
                 // Titre principal
                 Text(
@@ -107,11 +113,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
 
-                SizedBox(height: 12),
+                const SizedBox(height: 12),
 
                 // Sous-titre
                 Text(
-                  'Entrez votre numéro pour gérer\nvotre restaurant',
+                  'Connectez-vous pour gerer\nvotre restaurant',
                   style: TextStyle(
                     fontSize: 15.0.sp,
                     color: textLightColor,
@@ -120,13 +126,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
 
-                SizedBox(height: 50),
+                const SizedBox(height: 50),
 
-                // Champ Numéro de téléphone
+                // Champ Numero de telephone
                 _buildInputField(
                   controller: _controller.phoneController,
                   focusNode: _controller.phoneFocusNode,
-                  label: 'Numéro de téléphone',
+                  label: 'Numero de telephone',
                   hintText: 'ex: 0707070707',
                   prefixIcon: 'phone',
                   keyboardType: TextInputType.phone,
@@ -143,31 +149,32 @@ class _LoginScreenState extends State<LoginScreen> {
                   borderColor: borderColor,
                 ),
 
-                SizedBox(height: 12),
+                const SizedBox(height: 20),
 
-                // Message d'aide
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Text(
-                    'Un code vous sera envoyé par SMS pour vous connecter',
-                    style: TextStyle(
-                      fontSize: 12.0.sp,
-                      color: textLightColor,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                // Champ Mot de passe
+                _buildPasswordField(
+                  controller: _controller.passwordController,
+                  focusNode: _controller.passwordFocusNode,
+                  label: 'Mot de passe',
+                  hintText: 'Entrez votre mot de passe',
+                  validator: _controller.validatePassword,
+                  isDarkMode: isDarkMode,
+                  textColor: textColor,
+                  textLightColor: textLightColor,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
 
-                // Bouton Continuer
+                // Bouton Se connecter
                 _buildMainButton(
-                  onPressed: _controller.isPhoneValid && !_controller.isLoading ? _submitForm : null,
-                  label: 'Continuer',
+                  onPressed: _controller.isFormValid && !_controller.isLoading ? _submitForm : null,
+                  label: 'Se connecter',
                   isLoading: _controller.isLoading,
                 ),
 
-                SizedBox(height: 40),
+                const SizedBox(height: 40),
               ],
             ),
           ),
@@ -176,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Widget pour créer un champ de formulaire
+  // Widget pour creer un champ de formulaire texte
   Widget _buildInputField({
     required TextEditingController controller,
     required FocusNode focusNode,
@@ -197,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: 4, bottom: 8),
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             label,
             style: TextStyle(
@@ -227,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
               fontSize: 14.0.sp,
               fontWeight: FontWeight.w500,
             ),
-            contentPadding: EdgeInsets.symmetric(
+            contentPadding: const EdgeInsets.symmetric(
               vertical: 16,
               horizontal: 16,
             ),
@@ -284,7 +291,112 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Widget pour créer le bouton principal
+  // Widget pour creer le champ mot de passe avec toggle visibilite
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    required String hintText,
+    required bool isDarkMode,
+    required Color textColor,
+    required Color textLightColor,
+    required Color surfaceColor,
+    required Color borderColor,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14.0.sp,
+              fontWeight: FontWeight.w500,
+              color: textColor,
+            ),
+          ),
+        ),
+        TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: !_controller.isPasswordVisible,
+          decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: TextStyle(
+              color: textLightColor.withValues(alpha: 0.6),
+              fontSize: 14.0.sp,
+            ),
+            prefixIcon: IconManager.getIcon(
+              'lock',
+              color: textLightColor,
+              size: 18.r,
+            ),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _controller.isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                color: textLightColor,
+                size: 20.r,
+              ),
+              onPressed: () => _controller.togglePasswordVisibility(setState),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 16,
+              horizontal: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: borderColor,
+                width: 1.w,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: borderColor,
+                width: 1.w,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: AppColors.primary,
+                width: 2.w,
+              ),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Colors.red,
+                width: 1.w,
+              ),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Colors.red,
+                width: 2.w,
+              ),
+            ),
+            filled: true,
+            fillColor: surfaceColor,
+          ),
+          validator: validator,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 14.0.sp,
+          ),
+          onFieldSubmitted: (_) {
+            if (_controller.isFormValid) _submitForm();
+          },
+        ),
+      ],
+    );
+  }
+
+  // Widget pour creer le bouton principal
   Widget _buildMainButton({
     required VoidCallback? onPressed,
     required String label,
@@ -307,27 +419,27 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         child: isLoading
             ? SizedBox(
-          height: 24.h,
-          width: 24.w,
-          child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 3,
-          ),
-        )
+                height: 24.h,
+                width: 24.w,
+                child: const CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                ),
+              )
             : Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 16.0.sp,
-                fontWeight: FontWeight.w600,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 16.0.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconManager.getIcon('arrow_forward', size: 18),
+                ],
               ),
-            ),
-            SizedBox(width: 8),
-            IconManager.getIcon('arrow_forward', size: 18),
-          ],
-        ),
       ),
     );
   }

@@ -1,18 +1,20 @@
 // lib/screens/splash/index.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProviderStateMixin {
   late AnimationController _liquidController;
   late AnimationController _fadeController;
   late Animation<double> _liquidAnimation;
@@ -52,12 +54,34 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       }
     });
 
-    // Navigation vers l'écran de connexion après 5 secondes (3s animation + 2s attente)
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        Routes.navigateAndReplace(Routes.login);
-      }
-    });
+    // Verifier l'authentification puis naviguer
+    _checkAuthAndNavigate();
+  }
+
+  /// Verifie l'etat d'authentification en parallele de l'animation.
+  /// Attend au minimum 3 secondes (duree de l'animation) avant de naviguer.
+  Future<void> _checkAuthAndNavigate() async {
+    final stopwatch = Stopwatch()..start();
+
+    // Lancer la verification d'auth en parallele
+    await ref.read(authProvider.notifier).checkAuthStatus();
+
+    stopwatch.stop();
+
+    // S'assurer qu'on attend au moins 3 secondes pour l'animation
+    final elapsed = stopwatch.elapsedMilliseconds;
+    if (elapsed < 3000) {
+      await Future.delayed(Duration(milliseconds: 3000 - elapsed));
+    }
+
+    if (!mounted) return;
+
+    final authState = ref.read(authProvider);
+    if (authState.status == AuthStatus.authenticated) {
+      Routes.navigateAndRemoveAll(Routes.home);
+    } else {
+      Routes.navigateAndRemoveAll(Routes.login);
+    }
   }
 
   @override
