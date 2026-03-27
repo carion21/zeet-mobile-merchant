@@ -88,7 +88,7 @@ class Routes {
   }
 
   // Navigation vers les détails de commande
-  static Future<T?> pushOrderDetails<T>(String orderId) {
+  static Future<T?> pushOrderDetails<T>(int orderId) {
     if (navigatorKey.currentState == null) return Future.value(null);
 
     return navigatorKey.currentState!.push<T>(
