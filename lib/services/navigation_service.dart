@@ -9,7 +9,17 @@ import 'package:merchant/screens/order_details/index.dart';
 import 'package:merchant/screens/profile/index.dart';
 import 'package:merchant/screens/menu/index.dart';
 import 'package:merchant/screens/food_details/index.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
+/// Service de navigation centralisé de l'app Merchant.
+///
+/// Toutes les transitions passent par [ZeetPageRoute] (package partagé
+/// `zeet_ui`) avec style shared axis horizontal par défaut pour garantir
+/// une grammaire cohérente avec client et rider.
+///
+/// Respect automatique de `MediaQuery.disableAnimations`.
+///
+/// Voir skills : `zeet-motion-system` §4, `zeet-pos-ergonomics` §2bis.
 class Routes {
   // GlobalKey unique pour le Navigator
   static final navigatorKey = GlobalKey<NavigatorState>();
@@ -32,185 +42,119 @@ class Routes {
     menu: (context) => const MenuScreen(),
   };
 
-  // Navigation standard avec animation personnalisée
-  static void navigateTo(String routeName) {
-    if (navigatorKey.currentState == null) return;
+  // ─── Helpers ZeetPageRoute ────────────────────────────────────────
 
-    navigatorKey.currentState!.pushNamed(routeName);
-  }
-
-  // Navigation avec paramètres et animation personnalisée
-  static Future<T?> push<T>(Widget page) {
-    if (navigatorKey.currentState == null) return Future.value(null);
-
-    return navigatorKey.currentState!.push<T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => page,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
+  static ZeetPageRoute<T> _buildRoute<T>(
+    WidgetBuilder builder, {
+    ZeetTransitionStyle style = ZeetTransitionStyle.sharedAxisHorizontal,
+    RouteSettings? settings,
+  }) {
+    return ZeetPageRoute<T>(
+      builder: builder,
+      style: style,
+      settings: settings,
     );
   }
 
-  // Navigation spéciale pour l'écran de vérification OTP avec paramètres
+  // ─── Navigation ───────────────────────────────────────────────────
+
+  static void navigateTo(String routeName) {
+    if (navigatorKey.currentState == null) return;
+    navigatorKey.currentState!.pushNamed(routeName);
+  }
+
+  static Future<T?> push<T>(
+    Widget page, {
+    ZeetTransitionStyle style = ZeetTransitionStyle.sharedAxisHorizontal,
+  }) {
+    if (navigatorKey.currentState == null) return Future.value(null);
+    return navigatorKey.currentState!.push<T>(
+      _buildRoute<T>((_) => page, style: style),
+    );
+  }
+
   static Future<T?> pushVerifyOtp<T>({
     required String phoneNumber,
     String? fullName,
     required String type,
   }) {
     if (navigatorKey.currentState == null) return Future.value(null);
-
     return navigatorKey.currentState!.push<T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => VerifyOtpScreen(
-          phoneNumber: phoneNumber,
-          fullName: fullName,
-          type: type,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
+      _buildRoute<T>((_) => VerifyOtpScreen(
+            phoneNumber: phoneNumber,
+            fullName: fullName,
+            type: type,
+          )),
     );
   }
 
-  // Navigation vers les détails de commande
   static Future<T?> pushOrderDetails<T>(int orderId) {
     if (navigatorKey.currentState == null) return Future.value(null);
-
     return navigatorKey.currentState!.push<T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => OrderDetailsScreen(
-          orderId: orderId,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
+      _buildRoute<T>((_) => OrderDetailsScreen(orderId: orderId)),
     );
   }
 
-  // Navigation vers les détails d'un plat
   static Future<T?> pushFoodDetails<T>(String foodId) {
     if (navigatorKey.currentState == null) return Future.value(null);
-
     return navigatorKey.currentState!.push<T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => FoodDetailsScreen(
-          foodId: foodId,
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
+      _buildRoute<T>((_) => FoodDetailsScreen(foodId: foodId)),
     );
   }
 
-  // Remplacement avec animation
   static void navigateAndReplace(String routeName) {
     if (navigatorKey.currentState == null) return;
-
     navigatorKey.currentState!.pushReplacementNamed(routeName);
   }
 
-  // Remplacement avec paramètres et animation
-  static Future<T?> pushReplacement<T>(Widget page) {
+  static Future<T?> pushReplacement<T>(
+    Widget page, {
+    ZeetTransitionStyle style = ZeetTransitionStyle.sharedAxisHorizontal,
+  }) {
     if (navigatorKey.currentState == null) return Future.value(null);
-
     return navigatorKey.currentState!.pushReplacement<T, T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => page,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
+      _buildRoute<T>((_) => page, style: style),
     );
   }
 
-  // Navigation avec effacement de l'historique et animation
   static void navigateAndRemoveAll(String routeName) {
     if (navigatorKey.currentState == null) return;
-
-    navigatorKey.currentState!.pushNamedAndRemoveUntil(routeName, (Route<dynamic> route) => false);
+    navigatorKey.currentState!
+        .pushNamedAndRemoveUntil(routeName, (Route<dynamic> route) => false);
   }
 
-  // Effacer tout avec paramètres et animation
-  static Future<T?> pushAndRemoveAll<T>(Widget page) {
+  static Future<T?> pushAndRemoveAll<T>(
+    Widget page, {
+    ZeetTransitionStyle style = ZeetTransitionStyle.sharedAxisHorizontal,
+  }) {
     if (navigatorKey.currentState == null) return Future.value(null);
-
     return navigatorKey.currentState!.pushAndRemoveUntil<T>(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => page,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          const begin = Offset(1.0, 0.0);
-          const end = Offset.zero;
-          const curve = Curves.easeInOut;
-          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-          var offsetAnimation = animation.drive(tween);
-          return SlideTransition(position: offsetAnimation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 300),
-      ),
-          (Route<dynamic> route) => false,
+      _buildRoute<T>((_) => page, style: style),
+      (Route<dynamic> route) => false,
     );
   }
 
-  // Retour avec animation
   static void goBack<T>([T? result]) {
     if (navigatorKey.currentState?.canPop() ?? false) {
       navigatorKey.currentState?.pop<T>(result);
     }
   }
 
-  // Génération des routes
+  // ─── Génération des routes (MaterialApp.onGenerateRoute) ──────────
+
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
-    // Récupérer le builder pour la route demandée
     final routeBuilder = routes[settings.name];
 
-    // Si la route n'existe pas, retourner à l'écran splash
     if (routeBuilder == null) {
-      // Return a default route if the requested route is not found
-      return MaterialPageRoute(
-        builder: routes[splash] ?? ((context) => const Scaffold(body: Center(child: Text('Route non trouvée')))),
+      return _buildRoute(
+        routes[splash] ??
+            (_) => const Scaffold(
+                  body: Center(child: Text('Route non trouvée')),
+                ),
         settings: const RouteSettings(name: splash),
       );
     }
 
-    // Création d'une route MaterialPageRoute standard
-    return MaterialPageRoute(
-      builder: routeBuilder,
-      settings: settings,
-    );
+    return _buildRoute(routeBuilder, settings: settings);
   }
 }

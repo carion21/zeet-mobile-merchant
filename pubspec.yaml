@@ -43,6 +43,15 @@ dependencies:
   animated_text_kit: ^4.3.0
   flutter_screenutil: ^5.9.3
   http: ^1.2.2
+  animations: ^2.0.11
+  animated_flip_counter: ^0.3.4
+  # Push notifications (FCM) — Phase 1 : "nouvelle commande"
+  firebase_core: ^4.4.0
+  firebase_messaging: ^16.0.1
+  # Lecture sonnerie systeme en boucle sur l'ecran Incoming Order
+  flutter_ringtone_player: ^4.0.0+3
+  zeet_ui:
+    path: ../packages/zeet_ui
 
 dev_dependencies:
   flutter_test:
