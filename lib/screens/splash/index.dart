@@ -60,15 +60,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
   /// Verifie l'etat d'authentification en parallele de l'animation.
   /// Attend au minimum 3 secondes (duree de l'animation) avant de naviguer.
+  ///
+  /// Filet de securite : un try/catch global assure qu'on navigue TOUJOURS,
+  /// meme si checkAuthStatus ou le provider crashe. Sinon la splash reste
+  /// figee a l'infini sur un futur non-awaited qui echoue silencieusement.
   Future<void> _checkAuthAndNavigate() async {
     final stopwatch = Stopwatch()..start();
 
-    // Lancer la verification d'auth en parallele
-    await ref.read(authProvider.notifier).checkAuthStatus();
+    try {
+      await ref.read(authProvider.notifier).checkAuthStatus();
+    } catch (e) {
+      debugPrint('[Splash] checkAuthStatus failed: $e');
+    }
 
     stopwatch.stop();
 
-    // S'assurer qu'on attend au moins 3 secondes pour l'animation
     final elapsed = stopwatch.elapsedMilliseconds;
     if (elapsed < 3000) {
       await Future.delayed(Duration(milliseconds: 3000 - elapsed));

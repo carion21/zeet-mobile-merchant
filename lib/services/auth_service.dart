@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:merchant/core/constants/api.dart';
 import 'package:merchant/models/partner_model.dart';
 import 'package:merchant/services/api_client.dart';
+import 'package:merchant/services/device_token_manager.dart';
 import 'package:merchant/services/token_service.dart';
 
 /// Service d'authentification pour la surface partner.
@@ -54,6 +57,11 @@ class AuthService {
         accessToken: accessToken,
         refreshToken: refreshToken,
       );
+
+      // Enregistrer le device token FCM aupres du backend (best-effort).
+      // CRITIQUE cote partner : le push est la facon de reveiller le
+      // restaurateur sur une nouvelle commande entrante.
+      unawaited(DeviceTokenManager.instance.registerCurrentDevice());
     }
 
     return response;
@@ -121,6 +129,12 @@ class AuthService {
   /// puis supprime les tokens locaux.
   Future<void> logout() async {
     final refreshToken = await _tokenService.getRefreshToken();
+
+    // Desenregistrer le device token FCM AVANT de purger la session
+    // pour que l'appel DELETE reste authentifie.
+    try {
+      await DeviceTokenManager.instance.unregisterCurrentDevice();
+    } catch (_) {}
 
     // Tenter de notifier le serveur (best-effort)
     if (refreshToken != null && refreshToken.isNotEmpty) {

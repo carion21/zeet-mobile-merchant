@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/models/partner_model.dart';
@@ -46,29 +48,42 @@ class AuthNotifier extends StateNotifier<AuthState> {
         super(const AuthState());
 
   /// Verifie l'etat d'authentification au demarrage de l'app.
-  /// Si des tokens sont stockes, tente de recuperer le profil partner.
+  ///
+  /// Strategie OPTIMISTE : si des tokens locaux existent → `authenticated`
+  /// immediat, l'hydratation du `PartnerModel` via `/me` tourne en tache
+  /// de fond. Evite de figer la splash sur un backend lent.
   Future<void> checkAuthStatus() async {
     state = state.copyWith(status: AuthStatus.loading);
 
-    try {
-      final isAuth = await _authService.isAuthenticated();
-      if (!isAuth) {
-        state = const AuthState(status: AuthStatus.unauthenticated);
-        return;
-      }
+    final bool isAuth = await _authService.isAuthenticated();
+    if (!isAuth) {
+      state = const AuthState(status: AuthStatus.unauthenticated);
+      return;
+    }
 
-      // Tokens presents : verifier leur validite via /auth/me
+    // Tokens presents → authenticated immediatement, partner=null temporaire.
+    state = const AuthState(status: AuthStatus.authenticated);
+
+    // Hydrate le partner en arriere-plan, ne bloque pas la navigation.
+    unawaited(_refreshMeInBackground());
+  }
+
+  Future<void> _refreshMeInBackground() async {
+    try {
       final partner = await _authService.getMe();
       state = AuthState(
         status: AuthStatus.authenticated,
         partner: partner,
       );
     } on ApiException catch (e) {
-      debugPrint('[AuthProvider] checkAuthStatus failed: $e');
-      state = const AuthState(status: AuthStatus.unauthenticated);
+      if (e.isUnauthorized) {
+        // Tokens invalides cote serveur → downgrade vers login.
+        state = const AuthState(status: AuthStatus.unauthenticated);
+      }
+      debugPrint('[AuthProvider] refresh /me failed: $e');
     } catch (e) {
-      debugPrint('[AuthProvider] checkAuthStatus error: $e');
-      state = const AuthState(status: AuthStatus.unauthenticated);
+      // Reseau / timeout : silencieux, on reste authenticated (offline-tolerant).
+      debugPrint('[AuthProvider] refresh /me error: $e');
     }
   }
 

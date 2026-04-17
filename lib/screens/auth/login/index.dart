@@ -1,14 +1,20 @@
 // screens/auth/login/index.dart
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+//
+// Login partner : phone + password (pas d'OTP).
+// DA : calque sur la login client (hero title 28sp, ZeetButton.primary
+// sticky bottom via ZeetBottomBar, fade+slide entry). Adapte pour 1 seule
+// etape (pas de progress dots, pas de Google).
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/sizes.dart';
-import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 import 'controllers.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -18,23 +24,50 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen>
+    with SingleTickerProviderStateMixin {
   late final LoginController _controller;
+  late final AnimationController _enterController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _controller = LoginController();
     _controller.initFocusListeners(setState);
+
+    _enterController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _enterController,
+      curve: Curves.easeOut,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.02),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _enterController, curve: Curves.easeOut),
+    );
+    _enterController.forward();
+
+    // Auto-focus sur le champ phone
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _controller.phoneFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
+    _enterController.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _submitForm() async {
+    FocusScope.of(context).unfocus();
     if (!_controller.formKey.currentState!.validate()) return;
 
     setState(() => _controller.isLoading = true);
@@ -48,14 +81,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _controller.isLoading = false);
 
     if (error == null) {
-      // Succes : naviguer vers l'ecran principal
       AppToast.showSuccess(
         context: context,
         message: 'Connexion reussie',
       );
       Routes.navigateAndRemoveAll(Routes.home);
     } else {
-      // Erreur : afficher le message
       AppToast.showError(
         context: context,
         message: error,
@@ -66,149 +97,167 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     AppSizes().initialize(context);
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDarkMode ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDarkMode ? AppColors.darkTextLight : AppColors.textLight;
-    final backgroundColor = isDarkMode ? AppColors.darkBackground : Colors.white;
-    final surfaceColor = isDarkMode ? AppColors.darkSurface : Colors.white;
-    final borderColor = isDarkMode ? AppColors.darkTextLight.withValues(alpha: 0.2) : const Color(0xFFEEEEEE);
+    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final Color textColor = isDarkMode ? AppColors.darkText : AppColors.text;
+    final Color textLightColor =
+        isDarkMode ? AppColors.darkTextLight : AppColors.textLight;
+    final Color backgroundColor =
+        isDarkMode ? AppColors.darkBackground : AppColors.white;
+    final Color surfaceColor =
+        isDarkMode ? AppColors.darkSurface : AppColors.white;
+    final Color borderColor = isDarkMode
+        ? AppColors.darkTextLight.withValues(alpha: 0.2)
+        : const Color(0xFFEEEEEE);
 
     return Scaffold(
       backgroundColor: backgroundColor,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Form(
-            key: _controller.formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 60),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Form(
+                key: _controller.formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const SizedBox(height: 48),
 
-                // Logo centre
-                Container(
-                  width: 80.w,
-                  height: 80.h,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: IconManager.getIcon(
-                    'restaurant',
-                    color: Colors.white,
-                    size: 40.r,
-                  ),
-                ),
+                    // Hero title — typo display 28
+                    Text(
+                      'Connexion',
+                      style: TextStyle(
+                        fontSize: 28.sp,
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
+                        letterSpacing: -0.5,
+                        height: 1.1,
+                      ),
+                      semanticsLabel: 'Connexion restaurateur ZEET',
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Entrez vos identifiants pour gerer votre restaurant.',
+                      style: TextStyle(
+                        fontSize: 15.sp,
+                        color: textLightColor,
+                        height: 1.4,
+                      ),
+                    ),
 
-                const SizedBox(height: 40),
+                    const SizedBox(height: 40),
 
-                // Titre principal
-                Text(
-                  'Connexion Restaurateur',
-                  style: TextStyle(
-                    fontSize: 28.0.sp,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                    // Phone field
+                    _PhoneField(
+                      controller: _controller.phoneController,
+                      focusNode: _controller.phoneFocusNode,
+                      validator: _controller.validatePhone,
+                      textColor: textColor,
+                      textLightColor: textLightColor,
+                      surfaceColor: surfaceColor,
+                      borderColor: borderColor,
+                      onSubmitted: (_) =>
+                          _controller.passwordFocusNode.requestFocus(),
+                    ),
 
-                const SizedBox(height: 12),
+                    const SizedBox(height: 20),
 
-                // Sous-titre
-                Text(
-                  'Connectez-vous pour gerer\nvotre restaurant',
-                  style: TextStyle(
-                    fontSize: 15.0.sp,
-                    color: textLightColor,
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                    // Password field
+                    _PasswordField(
+                      controller: _controller.passwordController,
+                      focusNode: _controller.passwordFocusNode,
+                      validator: _controller.validatePassword,
+                      obscured: !_controller.isPasswordVisible,
+                      onToggleVisibility: () =>
+                          _controller.togglePasswordVisibility(setState),
+                      textColor: textColor,
+                      textLightColor: textLightColor,
+                      surfaceColor: surfaceColor,
+                      borderColor: borderColor,
+                      onSubmitted: (_) => _submitForm(),
+                    ),
 
-                const SizedBox(height: 50),
+                    const SizedBox(height: 24),
 
-                // Champ Numero de telephone
-                _buildInputField(
-                  controller: _controller.phoneController,
-                  focusNode: _controller.phoneFocusNode,
-                  label: 'Numero de telephone',
-                  hintText: 'ex: 0707070707',
-                  prefixIcon: 'phone',
-                  keyboardType: TextInputType.phone,
-                  prefix: '+225 ',
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(10),
+                    // Footer legal discret
+                    Center(
+                      child: Text.rich(
+                        TextSpan(
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: textLightColor,
+                            height: 1.4,
+                          ),
+                          children: const <InlineSpan>[
+                            TextSpan(
+                              text:
+                                  "En continuant, vous acceptez nos Conditions d'utilisation partenaire.",
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
                   ],
-                  validator: _controller.validatePhone,
-                  isDarkMode: isDarkMode,
-                  textColor: textColor,
-                  textLightColor: textLightColor,
-                  surfaceColor: surfaceColor,
-                  borderColor: borderColor,
                 ),
-
-                const SizedBox(height: 20),
-
-                // Champ Mot de passe
-                _buildPasswordField(
-                  controller: _controller.passwordController,
-                  focusNode: _controller.passwordFocusNode,
-                  label: 'Mot de passe',
-                  hintText: 'Entrez votre mot de passe',
-                  validator: _controller.validatePassword,
-                  isDarkMode: isDarkMode,
-                  textColor: textColor,
-                  textLightColor: textLightColor,
-                  surfaceColor: surfaceColor,
-                  borderColor: borderColor,
-                ),
-
-                const SizedBox(height: 40),
-
-                // Bouton Se connecter
-                _buildMainButton(
-                  onPressed: _controller.isFormValid && !_controller.isLoading ? _submitForm : null,
-                  label: 'Se connecter',
-                  isLoading: _controller.isLoading,
-                ),
-
-                const SizedBox(height: 40),
-              ],
+              ),
             ),
           ),
         ),
       ),
+      // CTA primaire sticky bottom — un seul choix, pleine largeur
+      bottomNavigationBar: ZeetBottomBar(
+        child: ZeetButton.primary(
+          label: 'Se connecter',
+          onPressed: _controller.isLoading ? null : _submitForm,
+          fullWidth: true,
+          loading: _controller.isLoading,
+          size: ZeetButtonSize.lg,
+        ),
+      ),
     );
   }
+}
 
-  // Widget pour creer un champ de formulaire texte
-  Widget _buildInputField({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String hintText,
-    required String prefixIcon,
-    required bool isDarkMode,
-    required Color textColor,
-    required Color textLightColor,
-    required Color surfaceColor,
-    required Color borderColor,
-    String? prefix,
-    TextInputType keyboardType = TextInputType.text,
-    List<TextInputFormatter>? inputFormatters,
-    String? Function(String?)? validator,
-  }) {
+// ---------------------------------------------------------------------------
+// Phone field
+// ---------------------------------------------------------------------------
+class _PhoneField extends StatelessWidget {
+  const _PhoneField({
+    required this.controller,
+    required this.focusNode,
+    required this.validator,
+    required this.textColor,
+    required this.textLightColor,
+    required this.surfaceColor,
+    required this.borderColor,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String? Function(String?) validator;
+  final Color textColor;
+  final Color textLightColor;
+  final Color surfaceColor;
+  final Color borderColor;
+  final void Function(String)? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+      children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            label,
+            'Numero de telephone',
             style: TextStyle(
-              fontSize: 14.0.sp,
+              fontSize: 13.sp,
               fontWeight: FontWeight.w500,
               color: textColor,
             ),
@@ -217,102 +266,95 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         TextFormField(
           controller: controller,
           focusNode: focusNode,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+          inputFormatters: <TextInputFormatter>[
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
+          onFieldSubmitted: onSubmitted,
+          validator: validator,
+          style: TextStyle(color: textColor, fontSize: 16.sp),
           decoration: InputDecoration(
-            hintText: hintText,
+            hintText: 'ex : 0707070707',
             hintStyle: TextStyle(
               color: textLightColor.withValues(alpha: 0.6),
-              fontSize: 14.0.sp,
+              fontSize: 15.sp,
             ),
-            prefixIcon: IconManager.getIcon(
-              prefixIcon,
-              color: textLightColor,
-              size: 18.r,
-            ),
-            prefixText: prefix,
-            prefixStyle: TextStyle(
-              color: textColor,
-              fontSize: 14.0.sp,
-              fontWeight: FontWeight.w500,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: borderColor,
-                width: 1.w,
+            prefixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '+225',
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 15.sp,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: borderColor,
-                width: 1.w,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: AppColors.primary,
-                width: 2.w,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Colors.red,
-                width: 1.w,
-              ),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Colors.red,
-                width: 2.w,
-              ),
-            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 0),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
             filled: true,
             fillColor: surfaceColor,
-            suffixIcon: validator != null && validator(controller.text) == null && controller.text.isNotEmpty
-                ? IconManager.getIcon('check', color: Colors.green, size: 18)
-                : null,
-          ),
-          keyboardType: keyboardType,
-          inputFormatters: inputFormatters,
-          validator: validator,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 14.0.sp,
+            border: _outlineBorder(borderColor),
+            enabledBorder: _outlineBorder(borderColor),
+            focusedBorder: _outlineBorder(AppColors.primary, width: 2),
+            errorBorder: _outlineBorder(AppColors.danger),
+            focusedErrorBorder: _outlineBorder(AppColors.danger, width: 2),
           ),
         ),
       ],
     );
   }
 
-  // Widget pour creer le champ mot de passe avec toggle visibilite
-  Widget _buildPasswordField({
-    required TextEditingController controller,
-    required FocusNode focusNode,
-    required String label,
-    required String hintText,
-    required bool isDarkMode,
-    required Color textColor,
-    required Color textLightColor,
-    required Color surfaceColor,
-    required Color borderColor,
-    String? Function(String?)? validator,
-  }) {
+  static OutlineInputBorder _outlineBorder(Color color, {double width = 1}) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: color, width: width),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Password field
+// ---------------------------------------------------------------------------
+class _PasswordField extends StatelessWidget {
+  const _PasswordField({
+    required this.controller,
+    required this.focusNode,
+    required this.validator,
+    required this.obscured,
+    required this.onToggleVisibility,
+    required this.textColor,
+    required this.textLightColor,
+    required this.surfaceColor,
+    required this.borderColor,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String? Function(String?) validator;
+  final bool obscured;
+  final VoidCallback onToggleVisibility;
+  final Color textColor;
+  final Color textLightColor;
+  final Color surfaceColor;
+  final Color borderColor;
+  final void Function(String)? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+      children: <Widget>[
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            label,
+            'Mot de passe',
             style: TextStyle(
-              fontSize: 14.0.sp,
+              fontSize: 13.sp,
               fontWeight: FontWeight.w500,
               color: textColor,
             ),
@@ -321,126 +363,44 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         TextFormField(
           controller: controller,
           focusNode: focusNode,
-          obscureText: !_controller.isPasswordVisible,
+          obscureText: obscured,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: onSubmitted,
+          validator: validator,
+          style: TextStyle(color: textColor, fontSize: 16.sp),
           decoration: InputDecoration(
-            hintText: hintText,
+            hintText: 'Votre mot de passe',
             hintStyle: TextStyle(
               color: textLightColor.withValues(alpha: 0.6),
-              fontSize: 14.0.sp,
-            ),
-            prefixIcon: IconManager.getIcon(
-              'lock',
-              color: textLightColor,
-              size: 18.r,
+              fontSize: 15.sp,
             ),
             suffixIcon: IconButton(
               icon: Icon(
-                _controller.isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                obscured ? Icons.visibility_off : Icons.visibility,
                 color: textLightColor,
-                size: 20.r,
+                size: 20,
               ),
-              onPressed: () => _controller.togglePasswordVisibility(setState),
+              onPressed: onToggleVisibility,
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: borderColor,
-                width: 1.w,
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: borderColor,
-                width: 1.w,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: AppColors.primary,
-                width: 2.w,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Colors.red,
-                width: 1.w,
-              ),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: Colors.red,
-                width: 2.w,
-              ),
-            ),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
             filled: true,
             fillColor: surfaceColor,
+            border: _outlineBorder(borderColor),
+            enabledBorder: _outlineBorder(borderColor),
+            focusedBorder: _outlineBorder(AppColors.primary, width: 2),
+            errorBorder: _outlineBorder(AppColors.danger),
+            focusedErrorBorder: _outlineBorder(AppColors.danger, width: 2),
           ),
-          validator: validator,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 14.0.sp,
-          ),
-          onFieldSubmitted: (_) {
-            if (_controller.isFormValid) _submitForm();
-          },
         ),
       ],
     );
   }
 
-  // Widget pour creer le bouton principal
-  Widget _buildMainButton({
-    required VoidCallback? onPressed,
-    required String label,
-    bool isLoading = false,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      height: 50.h,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
-          disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: isLoading
-            ? SizedBox(
-                height: 24.h,
-                width: 24.w,
-                child: const CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 16.0.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconManager.getIcon('arrow_forward', size: 18),
-                ],
-              ),
-      ),
+  static OutlineInputBorder _outlineBorder(Color color, {double width = 1}) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: color, width: width),
     );
   }
 }
