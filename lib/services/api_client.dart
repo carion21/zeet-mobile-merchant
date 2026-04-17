@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:merchant/core/constants/api.dart';
 import 'package:merchant/core/utils/api_logger.dart';
 import 'package:merchant/services/token_service.dart';
@@ -42,6 +43,10 @@ class ApiClient {
 
   /// Drapeau pour eviter les boucles infinies de refresh.
   bool _isRefreshing = false;
+
+  /// Callback appele quand la session est definitivement expiree
+  /// (refresh echoue). L'appelant doit rediriger vers le login.
+  static VoidCallback? onSessionExpired;
 
   ApiClient._({
     TokenService? tokenService,
@@ -94,7 +99,7 @@ class ApiClient {
     try {
       final response = await _httpClient.get(url, headers: headers).timeout(_defaultTimeout);
       stopwatch.stop();
-      return _handleResponse('GET', url.toString(), response, stopwatch.elapsed);
+      return _handleResponse('GET', url.toString(), response, stopwatch.elapsed, null);
     } catch (e, st) {
       stopwatch.stop();
       ApiLogger.logError(method: 'GET', url: url.toString(), error: e, stackTrace: st);
@@ -118,10 +123,16 @@ class ApiClient {
     try {
       final response = await _httpClient.post(url, headers: headers, body: encodedBody).timeout(_defaultTimeout);
       stopwatch.stop();
-      return _handleResponse('POST', url.toString(), response, stopwatch.elapsed);
+      return _handleResponse('POST', url.toString(), response, stopwatch.elapsed, encodedBody);
     } catch (e, st) {
       stopwatch.stop();
-      ApiLogger.logError(method: 'POST', url: url.toString(), error: e, stackTrace: st);
+      ApiLogger.logError(
+        method: 'POST',
+        url: url.toString(),
+        error: e,
+        stackTrace: st,
+        requestBody: encodedBody,
+      );
       rethrow;
     }
   }
@@ -142,10 +153,16 @@ class ApiClient {
     try {
       final response = await _httpClient.put(url, headers: headers, body: encodedBody).timeout(_defaultTimeout);
       stopwatch.stop();
-      return _handleResponse('PUT', url.toString(), response, stopwatch.elapsed);
+      return _handleResponse('PUT', url.toString(), response, stopwatch.elapsed, encodedBody);
     } catch (e, st) {
       stopwatch.stop();
-      ApiLogger.logError(method: 'PUT', url: url.toString(), error: e, stackTrace: st);
+      ApiLogger.logError(
+        method: 'PUT',
+        url: url.toString(),
+        error: e,
+        stackTrace: st,
+        requestBody: encodedBody,
+      );
       rethrow;
     }
   }
@@ -166,10 +183,16 @@ class ApiClient {
     try {
       final response = await _httpClient.patch(url, headers: headers, body: encodedBody).timeout(_defaultTimeout);
       stopwatch.stop();
-      return _handleResponse('PATCH', url.toString(), response, stopwatch.elapsed);
+      return _handleResponse('PATCH', url.toString(), response, stopwatch.elapsed, encodedBody);
     } catch (e, st) {
       stopwatch.stop();
-      ApiLogger.logError(method: 'PATCH', url: url.toString(), error: e, stackTrace: st);
+      ApiLogger.logError(
+        method: 'PATCH',
+        url: url.toString(),
+        error: e,
+        stackTrace: st,
+        requestBody: encodedBody,
+      );
       rethrow;
     }
   }
@@ -188,7 +211,7 @@ class ApiClient {
     try {
       final response = await _httpClient.delete(url, headers: headers).timeout(_defaultTimeout);
       stopwatch.stop();
-      return _handleResponse('DELETE', url.toString(), response, stopwatch.elapsed);
+      return _handleResponse('DELETE', url.toString(), response, stopwatch.elapsed, null);
     } catch (e, st) {
       stopwatch.stop();
       ApiLogger.logError(method: 'DELETE', url: url.toString(), error: e, stackTrace: st);
@@ -205,6 +228,7 @@ class ApiClient {
     String url,
     http.Response response,
     Duration duration,
+    String? requestBody,
   ) async {
     final body = response.body.isNotEmpty ? jsonDecode(response.body) as Map<String, dynamic> : <String, dynamic>{};
 
@@ -231,13 +255,25 @@ class ApiClient {
     }
 
     // Erreur — message peut etre String ou List (validation NestJS)
+    final message = body['message'] is String
+        ? body['message'] as String
+        : body['message'] is List
+            ? (body['message'] as List).join(', ')
+            : 'Une erreur est survenue';
+
+    // Log consolide avec input + reponse pour faciliter le debug
+    ApiLogger.logError(
+      method: method,
+      url: url,
+      error: 'HTTP ${response.statusCode}: $message',
+      statusCode: response.statusCode,
+      requestBody: requestBody,
+      responseBody: body,
+    );
+
     throw ApiException(
       statusCode: response.statusCode,
-      message: body['message'] is String
-          ? body['message'] as String
-          : body['message'] is List
-              ? (body['message'] as List).join(', ')
-              : 'Une erreur est survenue',
+      message: message,
       errors: body['errors'] as Map<String, dynamic>?,
     );
   }
@@ -276,11 +312,13 @@ class ApiClient {
         }
       }
 
-      // Le refresh a echoue : nettoyer les tokens
+      // Le refresh a echoue : nettoyer les tokens et notifier.
       await _tokenService.clearTokens();
+      onSessionExpired?.call();
       return false;
     } catch (_) {
       await _tokenService.clearTokens();
+      onSessionExpired?.call();
       return false;
     } finally {
       _isRefreshing = false;

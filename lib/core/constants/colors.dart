@@ -1,30 +1,36 @@
-// lib/core/constants/colors.dart
+// Re-export vers le design system partagé `zeet_ui`.
+//
+// Tous les symboles historiques `AppColors.*` pointent maintenant sur
+// [ZeetColors] pour éviter toute divergence DA inter-app. Préférer
+// `ZeetColors.*` directement dans le nouveau code.
 import 'package:flutter/material.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
-/// Classe contenant toutes les couleurs utilisées dans l'application
 abstract class AppColors {
-  /// Couleur primaire - Rouge principal utilisé dans l'application
-  static const Color primary = Color(0xFFFFA439);
+  // ---------- Brand ----------
+  static const Color primary = ZeetColors.primary;
+  static const Color primaryDark = ZeetColors.primaryDark;
+  static const Color primaryLight = ZeetColors.primaryLight;
 
-  /// Couleur pour le texte - Noir standard
-  static const Color text = Color(0xFF000000);
+  // ---------- Neutres ----------
+  static const Color text = ZeetColors.ink;
+  static const Color textLight = ZeetColors.inkMuted;
+  static const Color line = ZeetColors.line;
+  static const Color white = ZeetColors.surface;
+  static const Color background = ZeetColors.surfaceAlt;
 
-  /// Couleur blanche - Utilisée pour les fonds et contrastes
-  static const Color white = Color(0xFFFFFFFF);
+  // ---------- Sémantique ----------
+  static const Color success = ZeetColors.success;
+  static const Color warning = ZeetColors.warning;
+  static const Color danger = ZeetColors.danger;
+  static const Color info = ZeetColors.info;
 
-  /// Couleur de texte secondaire/légère - Gris
-  static const Color textLight = Color(0xFF5c5c5c);
+  /// @deprecated Utiliser [danger]
+  static const Color error = ZeetColors.danger;
 
-  /// Couleur de fond - Gris très clair
-  static const Color background = Color(0xFFF5F5F5);
-
-  /// Couleur d'erreur - Rouge
-  static const Color error = Color(0xFFD32F2F);
-
-
-  static const Color darkBackground = Color(0xFF121212);
-  static const Color darkSurface = Color(0xFF1E1E1E);
-  static const Color darkText = Color(0xFFFFFFFF);
-  static const Color darkTextLight = Color(0xFFB0BEC5);
-
+  // ---------- Dark ----------
+  static const Color darkBackground = ZeetColors.surfaceDark;
+  static const Color darkSurface = ZeetColors.surfaceAltDark;
+  static const Color darkText = ZeetColors.inkDark;
+  static const Color darkTextLight = ZeetColors.inkMutedDark;
 }

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
+/// Logger HTTP uniquement actif en mode debug (stripped en release).
 class ApiLogger {
   static void _log(String message) {
+    if (!kDebugMode) return;
     for (final line in message.split('\n')) {
       debugPrint('[API] $line');
     }
@@ -23,6 +25,7 @@ class ApiLogger {
     Map<String, String>? headers,
     dynamic body,
   }) {
+    if (!kDebugMode) return;
     final buffer = StringBuffer();
     buffer.writeln('--------------------------------------------------');
     buffer.writeln('-- REQUEST');
@@ -55,6 +58,7 @@ class ApiLogger {
     dynamic body,
     Duration? duration,
   }) {
+    if (!kDebugMode) return;
     final buffer = StringBuffer();
     buffer.writeln('--------------------------------------------------');
     buffer.writeln('-- RESPONSE');
@@ -83,14 +87,35 @@ class ApiLogger {
     required String url,
     required Object error,
     StackTrace? stackTrace,
+    int? statusCode,
+    dynamic requestBody,
+    dynamic responseBody,
   }) {
+    if (!kDebugMode) return;
     final buffer = StringBuffer();
     buffer.writeln('--------------------------------------------------');
     buffer.writeln('-- ERROR');
     buffer.writeln('--------------------------------------------------');
     buffer.writeln('-- Method  : $method');
     buffer.writeln('-- URL     : $url');
+    if (statusCode != null) {
+      buffer.writeln('-- Status  : $statusCode');
+    }
     buffer.writeln('-- Error   : $error');
+
+    if (requestBody != null) {
+      buffer.writeln('-- Input   :');
+      for (final line in _prettyJson(requestBody).split('\n')) {
+        buffer.writeln('--   $line');
+      }
+    }
+
+    if (responseBody != null) {
+      buffer.writeln('-- Response:');
+      for (final line in _prettyJson(responseBody).split('\n')) {
+        buffer.writeln('--   $line');
+      }
+    }
 
     if (stackTrace != null) {
       buffer.writeln('-- Stack   :');

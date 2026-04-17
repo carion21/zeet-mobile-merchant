@@ -6,7 +6,7 @@ class ApiConfig {
   static const String prodBaseUrl = 'https://zeet-core-system-production.up.railway.app/v1';
 
   static String get baseUrl {
-    const environment = "test";
+    const environment = "prod";
     switch (environment) {
       case 'prod':
         return prodBaseUrl;
@@ -165,6 +165,7 @@ abstract class TicketEndpoints {
   static const String create = '/partner/tickets';
   static const String list = '/partner/tickets';
   static const String priorities = '/partner/tickets/select/priorities';
+  static const String actions = '/partner/tickets/actions';
   static String get(String id) => '/partner/tickets/$id';
   static String logs(String id) => '/partner/tickets/$id/logs';
   static String messages(String id) => '/partner/tickets/$id/messages';
@@ -177,11 +178,53 @@ abstract class TicketEndpoints {
 }
 
 // ---------------------------------------------------------------------------
+// Wallet
+// ---------------------------------------------------------------------------
+abstract class WalletEndpoints {
+  static const String balance = '/partner/wallet';
+  static const String entries = '/partner/wallet/entries';
+}
+
+// ---------------------------------------------------------------------------
+// Transactions (historique financier partner)
+// ---------------------------------------------------------------------------
+abstract class TransactionEndpoints {
+  static const String list = '/partner/transactions';
+}
+
+// ---------------------------------------------------------------------------
+// Payouts (demandes de virement partner)
+// ---------------------------------------------------------------------------
+abstract class PayoutEndpoints {
+  static const String create = '/partner/payouts';
+  static const String list = '/partner/payouts';
+  static String detail(String uuid) => '/partner/payouts/$uuid';
+  static String validate(String uuid) => '/partner/payouts/$uuid/validate';
+}
+
+// ---------------------------------------------------------------------------
 // Carts (paniers actifs des clients)
 // ---------------------------------------------------------------------------
 abstract class CartEndpoints {
   static const String list = '/partner/carts';
   static const String stats = '/partner/carts/stats';
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+abstract class NotificationEndpoints {
+  static const String list = '/partner/notifications';
+  static const String unreadCount = '/partner/notifications/unread-count';
+  static const String readAll = '/partner/notifications/read-all';
+  static const String preferences = '/partner/notifications/preferences';
+  static const String deviceToken = '/partner/notifications/device-token';
+  static String markAsRead(String id) => '/partner/notifications/$id/read';
+  static String acknowledge(String id) => '/partner/notifications/$id/ack';
+  static String updatePreference(String id) =>
+      '/partner/notifications/preferences/$id';
+  static String removeDeviceToken(String id) =>
+      '/partner/notifications/device-token/$id';
 }
 
 // ---------------------------------------------------------------------------
