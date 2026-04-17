@@ -2,13 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:merchant/screens/splash/index.dart';
 import 'package:merchant/screens/auth/login/index.dart';
-import 'package:merchant/screens/auth/verify_otp/index.dart';
 import 'package:merchant/screens/home/index.dart';
 import 'package:merchant/screens/orders/index.dart';
 import 'package:merchant/screens/order_details/index.dart';
 import 'package:merchant/screens/profile/index.dart';
 import 'package:merchant/screens/menu/index.dart';
-import 'package:merchant/screens/food_details/index.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 /// Service de navigation centralisé de l'app Merchant.
@@ -73,32 +71,10 @@ class Routes {
     );
   }
 
-  static Future<T?> pushVerifyOtp<T>({
-    required String phoneNumber,
-    String? fullName,
-    required String type,
-  }) {
-    if (navigatorKey.currentState == null) return Future.value(null);
-    return navigatorKey.currentState!.push<T>(
-      _buildRoute<T>((_) => VerifyOtpScreen(
-            phoneNumber: phoneNumber,
-            fullName: fullName,
-            type: type,
-          )),
-    );
-  }
-
   static Future<T?> pushOrderDetails<T>(int orderId) {
     if (navigatorKey.currentState == null) return Future.value(null);
     return navigatorKey.currentState!.push<T>(
       _buildRoute<T>((_) => OrderDetailsScreen(orderId: orderId)),
-    );
-  }
-
-  static Future<T?> pushFoodDetails<T>(String foodId) {
-    if (navigatorKey.currentState == null) return Future.value(null);
-    return navigatorKey.currentState!.push<T>(
-      _buildRoute<T>((_) => FoodDetailsScreen(foodId: foodId)),
     );
   }
 
@@ -147,11 +123,29 @@ class Routes {
 
     if (routeBuilder == null) {
       return _buildRoute(
-        routes[splash] ??
-            (_) => const Scaffold(
-                  body: Center(child: Text('Route non trouvée')),
+        (_) => Scaffold(
+          appBar: AppBar(title: const Text('Page introuvable')),
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wrong_location_outlined,
+                    size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  'La route "${settings.name}" n\'existe pas.',
+                  textAlign: TextAlign.center,
                 ),
-        settings: const RouteSettings(name: splash),
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () => navigateAndRemoveAll(home),
+                  child: const Text('Retour a l\'accueil'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        settings: settings,
       );
     }
 
