@@ -223,11 +223,22 @@ class OrderService {
   // ---------------------------------------------------------------------------
   /// Annule une commande.
   ///
-  /// [cancelReason] : raison de l'annulation (obligatoire).
+  /// [cancelReason] : raison de l'annulation — **obligatoire** (backend 2026-04-15).
+  /// Le backend repond 400 si ce champ est vide, null ou absent.
   Future<Order> cancelOrder(int orderId, {required String cancelReason}) async {
+    final trimmed = cancelReason.trim();
+    if (trimmed.isEmpty) {
+      // Garde-fou cote client : on evite un aller-retour reseau inutile.
+      throw const ApiException(
+        statusCode: 400,
+        message:
+            'La raison du refus est obligatoire pour annuler une commande.',
+      );
+    }
+
     final response = await _apiClient.post(
       OrderEndpoints.cancel(orderId.toString()),
-      body: {'cancel_reason': cancelReason},
+      body: {'cancel_reason': trimmed},
     );
 
     return Order.fromJson(response['data'] as Map<String, dynamic>);

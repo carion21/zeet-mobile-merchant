@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:intl/intl.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class OrderDetailsScreen extends ConsumerStatefulWidget {
   final int orderId;
@@ -67,17 +71,65 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     Color dividerColor,
     bool isDark,
   ) {
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
+
     switch (detailState.status) {
       case OrderDetailStatus.initial:
       case OrderDetailStatus.loading:
         return Column(
           children: [
             _buildSimpleHeader(textColor),
-            const Expanded(child: Center(child: CircularProgressIndicator())),
+            const Expanded(
+              child: ZeetSkeletonList(itemCount: 4, itemHeight: 96),
+            ),
           ],
         );
 
       case OrderDetailStatus.error:
+        // Si offline sans donnees en cache, afficher l'etat offline.
+        if (!isOnline) {
+          return Column(
+            children: [
+              _buildSimpleHeader(textColor),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.wifi_off_outlined, size: 48,
+                          color: textLightColor),
+                      SizedBox(height: 16.h),
+                      Text(
+                        'Hors ligne',
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        'Verifie ta connexion internet',
+                        style: TextStyle(color: textLightColor, fontSize: 14.sp),
+                      ),
+                      SizedBox(height: 16.h),
+                      TextButton.icon(
+                        onPressed: () => ref
+                            .read(orderDetailProvider.notifier)
+                            .load(widget.orderId),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Reessayer'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
         return Column(
           children: [
             _buildSimpleHeader(textColor),
@@ -86,20 +138,21 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    Icon(Icons.error_outline, size: 48,
+                        color: textLightColor),
+                    SizedBox(height: 16.h),
                     Text(
                       detailState.errorMessage ?? 'Commande introuvable',
+                      textAlign: TextAlign.center,
                       style: TextStyle(color: textColor, fontSize: 16.sp),
                     ),
                     SizedBox(height: 16.h),
-                    ElevatedButton(
+                    TextButton.icon(
                       onPressed: () => ref
                           .read(orderDetailProvider.notifier)
                           .load(widget.orderId),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Reessayer'),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Reessayer'),
                     ),
                   ],
                 ),
@@ -387,13 +440,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             IconButton(
               icon: IconManager.getIcon('phone',
                   size: 24.r, color: AppColors.primary),
-              onPressed: () {
-                AppToast.showInfo(
-                    context: context,
-                    message: 'Appel: ${order.customerPhone}');
+              tooltip: 'Appeler ${order.customerPhone}',
+              onPressed: () async {
+                HapticFeedback.selectionClick();
+                await launchPhoneCall(
+                  order.customerPhone,
+                  context: context,
+                );
               },
-              constraints: BoxConstraints(),
-              padding: EdgeInsets.zero,
             ),
         ],
       ),
@@ -467,8 +521,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                     ],
                   ),
                 ),
-                Text(
-                  currencyFormat.format(itemTotal),
+                ZeetMoney(
+                  amount: itemTotal,
+                  currency: ZeetCurrency.fcfa,
                   style: TextStyle(
                     fontSize: 15.sp,
                     fontWeight: FontWeight.bold,
@@ -535,8 +590,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                   color: textColor,
                 ),
               ),
-              Text(
-                currencyFormat.format(order.totalAmount ?? 0),
+              ZeetMoney(
+                amount: order.totalAmount ?? 0,
+                currency: ZeetCurrency.fcfa,
                 style: TextStyle(
                   fontSize: 20.sp,
                   fontWeight: FontWeight.bold,
@@ -571,8 +627,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       children: [
         Text(label,
             style: TextStyle(fontSize: 15.sp, color: textLightColor)),
-        Text(
-          currencyFormat.format(amount),
+        ZeetMoney(
+          amount: amount,
+          currency: ZeetCurrency.fcfa,
           style: TextStyle(
               fontSize: 15.sp, fontWeight: FontWeight.w600, color: textColor),
         ),
@@ -704,7 +761,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
               : Column(
                   children: [
                     Text(
-                      'Code non encore genere',
+                      'Code non encore généré',
                       style: TextStyle(fontSize: 14.sp, color: textLightColor),
                     ),
                     SizedBox(height: 12.h),
@@ -815,7 +872,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           ),
         ],
       ),
-      child: _buildActionsForStatus(order, isActing),
+      // Transition fluide entre les CTA (pending → confirmed → preparing →
+      // ready) et l'état loading. La clé inclut isActing pour que le swap
+      // vers le spinner soit aussi animé.
+      child: ZeetStateSwitcher(
+        stateKey: '${order.status}|${isActing ? "acting" : "idle"}',
+        alignment: Alignment.topCenter,
+        child: _buildActionsForStatus(order, isActing),
+      ),
     );
   }
 
@@ -914,7 +978,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           child: ElevatedButton(
             onPressed: isActing ? null : () => _markReady(order),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CD964),
+              backgroundColor: ZeetColors.success,
               padding: EdgeInsets.symmetric(vertical: 14.h),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12.r)),
@@ -971,9 +1035,13 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   // -------------------------------------------------------------------------
 
   Future<void> _confirmOrder(Order order) async {
+    // Haptics propagés (quickwin vague 2 §QW5) : confirmation sur tap,
+    // succès lourd sur validation backend.
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
+      HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmee');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -984,11 +1052,13 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _markPreparing(Order order) async {
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.markPreparing(order.id);
     if (success && mounted) {
+      HapticFeedback.heavyImpact();
       AppToast.showSuccess(
-          context: context, message: 'Preparation lancee - livreur dispatche');
+          context: context, message: 'Préparation lancée — un livreur a été assigné');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -997,9 +1067,11 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _markReady(Order order) async {
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.markReady(order.id);
     if (success && mounted) {
+      HapticFeedback.heavyImpact();
       AppToast.showSuccess(
           context: context, message: 'Commande prete pour collecte');
       ref.read(ordersListProvider.notifier).refresh();
@@ -1010,12 +1082,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _cancelOrder(Order order) async {
+    HapticFeedback.mediumImpact();
     final reason = await _showCancelDialog();
     if (reason == null || !mounted) return;
 
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
+      HapticFeedback.heavyImpact();
       AppToast.showWarning(context: context, message: 'Commande annulee');
       ref.read(ordersListProvider.notifier).refresh();
       Routes.goBack();
@@ -1050,37 +1124,49 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Future<String?> _showCancelDialog() async {
     final controller = TextEditingController();
+    // Le backend rejette desormais les refus sans raison (400). La modale
+    // desactive donc le bouton tant que le champ est vide — feedback visuel
+    // au lieu d'un tap silencieux.
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Refuser la commande'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Raison du refus...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final reason = controller.text.trim();
-              if (reason.isNotEmpty) {
-                Navigator.pop(context, reason);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          final trimmed = controller.text.trim();
+          final canSubmit = trimmed.isNotEmpty;
+          return AlertDialog(
+            title: const Text('Refuser la commande'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              onChanged: (_) => setLocalState(() {}),
+              decoration: const InputDecoration(
+                hintText: 'Raison du refus (obligatoire)',
+                helperText: 'Le client sera informe de ce motif',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
-            child: const Text('Confirmer'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.pop(context, trimmed)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor:
+                      AppColors.primary.withValues(alpha: 0.4),
+                  disabledForegroundColor: Colors.white70,
+                ),
+                child: const Text('Confirmer'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

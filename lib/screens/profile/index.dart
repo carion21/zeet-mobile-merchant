@@ -8,8 +8,10 @@ import 'package:merchant/core/widgets/app_popup.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
+import 'package:merchant/screens/tickets/index.dart';
+import 'package:merchant/screens/wallet/index.dart';
 import 'package:merchant/services/navigation_service.dart';
-import 'package:intl/intl.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -163,15 +165,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           decoration: BoxDecoration(
             color: AppColors.primary,
             shape: BoxShape.circle,
-            image: logoUrl != null
-                ? DecorationImage(
-                    image: NetworkImage(logoUrl),
-                    fit: BoxFit.cover,
-                  )
-                : null,
           ),
-          child: logoUrl == null
-              ? Center(
+          child: logoUrl != null
+              ? ClipOval(
+                  child: ZeetImage(
+                    url: logoUrl,
+                    width: 100.w,
+                    height: 100.h,
+                    fit: BoxFit.cover,
+                    errorWidget: Center(
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 32.sp,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : Center(
                   child: Text(
                     initials,
                     style: TextStyle(
@@ -180,8 +194,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                )
-              : null,
+                ),
         ),
         SizedBox(height: 16.h),
 
@@ -225,7 +238,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final ordersToday = ref.watch(ordersTodayProvider);
     final revenueToday = ref.watch(revenueTodayProvider);
     final rating = ref.watch(ratingProvider);
-    final currencyFormat = NumberFormat.compact(locale: 'fr_FR');
     final commissionRate = ref.watch(commissionRateProvider);
 
     return Container(
@@ -270,11 +282,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 color: textLightColor.withValues(alpha: 0.2),
               ),
               Expanded(
-                child: _buildStatItem(
-                  label: 'Gains',
-                  value: revenueToday > 0 ? currencyFormat.format(revenueToday) : '0',
-                  textColor: textColor,
-                  textLightColor: textLightColor,
+                child: Column(
+                  children: [
+                    ZeetMoney(
+                      amount: revenueToday,
+                      currency: ZeetCurrency.fcfa,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 24.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 4.h),
+                    Text(
+                      'Gains',
+                      style: TextStyle(
+                        color: textLightColor,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Container(
@@ -375,31 +402,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             textColor: textColor,
             textLightColor: textLightColor,
           ),
+          // Entrées "Mon menu", "Statistiques", "Paramètres" retirées :
+          // elles sont HORS-SCOPE mobile et couvertes par l'admin web
+          // (cf. audit partner 2026-04-15 §6).
           _buildProfileOption(
-            title: 'Mon menu',
-            icon: 'restaurant',
+            title: 'Portefeuille',
+            icon: 'wallet',
             onTap: () {
-              Routes.navigateTo(Routes.menu);
-            },
-            showDivider: true,
-            textColor: textColor,
-            textLightColor: textLightColor,
-          ),
-          _buildProfileOption(
-            title: 'Statistiques',
-            icon: 'trending_up',
-            onTap: () {
-              AppToast.showInfo(context: context, message: 'Statistiques');
-            },
-            showDivider: true,
-            textColor: textColor,
-            textLightColor: textLightColor,
-          ),
-          _buildProfileOption(
-            title: 'Paramètres',
-            icon: 'settings',
-            onTap: () {
-              AppToast.showInfo(context: context, message: 'Paramètres');
+              Routes.push(const WalletScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
             },
             showDivider: true,
             textColor: textColor,
@@ -409,7 +419,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Aide et support',
             icon: 'help',
             onTap: () {
-              AppToast.showInfo(context: context, message: 'Support');
+              Routes.push(const TicketsScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
             },
             showDivider: false,
             textColor: textColor,

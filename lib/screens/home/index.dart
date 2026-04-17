@@ -1,16 +1,23 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/constants/assets.dart';
 import 'package:merchant/models/order_model.dart';
+import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/core/utils/phone_launcher.dart';
+import 'package:merchant/services/incoming_order_dispatcher.dart';
 import 'package:merchant/services/navigation_service.dart';
-import 'package:intl/intl.dart';
+import 'package:merchant/screens/wallet/index.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -27,12 +34,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
 
-    // Charger le dashboard, le profil et les commandes au demarrage
     Future.microtask(() {
+      ref.read(authProvider.notifier).checkAuthStatus();
       ref.read(dashboardProvider.notifier).loadSummary();
       ref.read(profileProvider.notifier).loadProfile();
       ref.read(ordersListProvider.notifier).load();
     });
+
+    // Si le /me en arriere-plan decouvre des tokens invalides → login.
+    ref.listenManual(authProvider, (prev, next) {
+      if (prev?.status == AuthStatus.authenticated &&
+          next.status == AuthStatus.unauthenticated) {
+        Routes.navigateAndRemoveAll(Routes.login);
+      }
+    });
+
   }
 
   @override
@@ -53,11 +69,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final dashboardSummary = ref.watch(dashboardProvider).summary;
     final double todayEarnings = dashboardSummary?.revenueToday ?? 0;
 
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
+
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
         child: Column(
           children: [
+            // Bandeau hors ligne — ConnectivityBanner cable sur
+            // connectivityStatusProvider (zeet_ui). orElse: true = on
+            // suppose online pendant la 1re emission pour eviter un
+            // flash offline au demarrage.
+            ConnectivityBanner(isOnline: isOnline),
+
             // Header moderne
             _buildModernHeader(textColor, textLightColor, pendingCount),
 
@@ -109,7 +136,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Icone profil a gauche (avec logo si disponible)
-              GestureDetector(
+              Semantics(
+                label: 'Profil restaurant — $restaurantName',
+                button: true,
+                child: GestureDetector(
                 onTap: () {
                   Routes.navigateTo(Routes.profile);
                 },
@@ -119,55 +149,84 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
-                    image: partnerProfile?.picture != null
-                        ? DecorationImage(
-                            image: NetworkImage(partnerProfile!.picture!),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
                   ),
-                  child: partnerProfile?.picture == null
-                      ? Center(
-                          child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                  child: partnerProfile?.picture != null
+                      ? ClipOval(
+                          child: ZeetImage(
+                            url: partnerProfile!.picture,
+                            width: 40.w,
+                            height: 40.h,
+                            fit: BoxFit.cover,
+                            errorWidget: Center(
+                              child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                            ),
+                          ),
                         )
-                      : null,
+                      : Center(
+                          child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                        ),
                 ),
               ),
+              ),
 
-              // Notification a droite
-              IconButton(
-                onPressed: () {
-                  // TODO: Navigate to notifications
-                },
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    IconManager.getIcon('notifications', color: textColor, size: 26.r),
-                    if (newOrdersCount > 0)
-                      Positioned(
-                        right: -2,
-                        top: -2,
-                        child: Container(
-                          padding: EdgeInsets.all(4.r),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.h),
-                          child: Center(
-                            child: Text(
-                              '$newOrdersCount',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10.sp,
-                                fontWeight: FontWeight.bold,
+              // Actions a droite : (dev) test incoming order + cloche
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Dev-only : declenche l'ecran "nouvelle commande" avec un
+                  // payload bidon. Masque en release.
+                  if (kDebugMode)
+                    IconButton(
+                      tooltip: 'Tester nouvelle commande (dev)',
+                      onPressed: () =>
+                          IncomingOrderDispatcher.triggerDev(ref),
+                      icon: Icon(
+                        Icons.flash_on_rounded,
+                        color: AppColors.primary,
+                        size: 24.r,
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: 'Mon menu',
+                    onPressed: () => Routes.navigateTo(Routes.menu),
+                    icon: IconManager.getIcon('restaurant', color: textColor, size: 26.r),
+                  ),
+                  IconButton(
+                    tooltip: 'Notifications',
+                    onPressed: () {
+                      // TODO: Navigate to notifications
+                    },
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconManager.getIcon('notifications', color: textColor, size: 26.r),
+                        if (newOrdersCount > 0)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              padding: EdgeInsets.all(4.r),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.h),
+                              child: Center(
+                                child: Text(
+                                  '$newOrdersCount',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.sp,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -192,13 +251,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       width: 7.w,
                       height: 7.h,
                       decoration: BoxDecoration(
-                        color: isOpen ? const Color(0xFF4CD964) : Colors.grey,
+                        color: isOpen ? ZeetColors.success : Colors.grey,
                         shape: BoxShape.circle,
                       ),
                     ),
                     SizedBox(width: 5.w),
                     Text(
-                      isOpen ? 'Ouvert' : 'Ferme',
+                      isOpen ? 'Ouvert' : 'Fermé',
                       style: TextStyle(
                         color: textColor,
                         fontWeight: FontWeight.w600,
@@ -216,10 +275,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   Widget _buildEarningsCard(bool isDark, double earnings) {
-    final currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: 'FCFA', decimalDigits: 0);
     final walletBackground = isDark ? AppAssets.darkWallet : AppAssets.lightWallet;
 
-    return Container(
+    // Raccourci 3-clicks-rule partner : le wallet est accessible en 1 tap
+    // depuis le home en tapant sur la card "Gains du jour". Hit target full-card.
+    return GestureDetector(
+      onTap: () async {
+        await HapticFeedback.lightImpact();
+        Routes.push(const WalletScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
+      },
+      child: Container(
       margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
       padding: EdgeInsets.all(20.w),
       decoration: BoxDecoration(
@@ -247,8 +312,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     ),
                   ),
                   SizedBox(height: 8.h),
-                  Text(
-                    currencyFormat.format(earnings),
+                  ZeetMoney(
+                    amount: earnings,
+                    currency: ZeetCurrency.fcfa,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 32.sp,
@@ -269,6 +335,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ],
           ),
         ],
+      ),
       ),
     );
   }
@@ -308,7 +375,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 SizedBox(height: 6.h),
                 Row(
                   children: [
-                    IconManager.getIcon('shopping_bag', color: const Color(0xFFFFA500), size: 18.r),
+                    IconManager.getIcon('shopping_bag', color: ZeetColors.warning, size: 18.r),
                     SizedBox(width: 6.w),
                     Text(
                       '$ordersToday',
@@ -343,7 +410,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 SizedBox(height: 6.h),
                 Row(
                   children: [
-                    IconManager.getIcon('star', color: const Color(0xFFFFD700), size: 18.r),
+                    // Intentionnel : couleur dorée standard pour les étoiles de notation
+                    IconManager.getIcon('star', color: Colors.amber, size: 18.r),
                     SizedBox(width: 6.w),
                     Text(
                       rating > 0 ? rating.toStringAsFixed(1) : '--',
@@ -497,8 +565,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
   Widget _buildNewOrdersFAB(int newOrdersCount) {
     return FloatingActionButton(
+      tooltip: '$newOrdersCount nouvelles commandes à traiter',
       onPressed: () {
         // Passer directement a l'onglet "Nouvelles"
+        // Haptic POS (quickwin vague 2 §QW5).
+        HapticFeedback.selectionClick();
         _tabController.animateTo(0);
       },
       backgroundColor: AppColors.primary,
@@ -545,49 +616,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   Widget _buildNewOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
     final ordersState = ref.watch(ordersListProvider);
     final pendingOrders = ordersState.pendingOrders;
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
 
-    if (ordersState.status == OrdersListStatus.loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (pendingOrders.isEmpty) {
-      return _buildEmptyState('Aucune nouvelle commande', 'Les nouvelles commandes apparaitront ici');
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(vertical: 8.h),
-      itemCount: pendingOrders.length,
-      itemBuilder: (context, index) {
-        final order = pendingOrders[index];
-        return _buildOrderCard(order, surfaceColor, textColor, textLightColor, showActions: true);
-      },
+    return ZeetScreenScaffold(
+      state: _resolveHomeOrderState(ordersState, pendingOrders, isOnline),
+      onRetry: () => ref.read(ordersListProvider.notifier).load(),
+      emptyTitle: 'Aucune nouvelle commande',
+      emptySubtitle: 'Les nouvelles commandes apparaitront ici',
+      emptyIcon: Icons.shopping_bag_outlined,
+      errorMessage: ordersState.errorMessage,
+      child: ListView.builder(
+        padding: EdgeInsets.symmetric(vertical: 8.h),
+        itemCount: pendingOrders.length,
+        itemBuilder: (context, index) {
+          final order = pendingOrders[index];
+          return _buildOrderCard(order, surfaceColor, textColor, textLightColor, showActions: true);
+        },
+      ),
     );
   }
 
   Widget _buildActiveOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
     final ordersState = ref.watch(ordersListProvider);
     final active = ordersState.activeOrders;
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
 
-    if (ordersState.status == OrdersListStatus.loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (active.isEmpty) {
-      return _buildEmptyState('Aucune commande en cours', 'Les commandes actives apparaitront ici');
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(vertical: 8.h),
-      itemCount: active.length,
-      itemBuilder: (context, index) {
-        final order = active[index];
-        return _buildOrderCard(order, surfaceColor, textColor, textLightColor);
-      },
+    return ZeetScreenScaffold(
+      state: _resolveHomeOrderState(ordersState, active, isOnline),
+      onRetry: () => ref.read(ordersListProvider.notifier).load(),
+      emptyTitle: 'Aucune commande en cours',
+      emptySubtitle: 'Les commandes actives apparaitront ici',
+      emptyIcon: Icons.shopping_bag_outlined,
+      errorMessage: ordersState.errorMessage,
+      child: ListView.builder(
+        padding: EdgeInsets.symmetric(vertical: 8.h),
+        itemCount: active.length,
+        itemBuilder: (context, index) {
+          final order = active[index];
+          return _buildOrderCard(order, surfaceColor, textColor, textLightColor);
+        },
+      ),
     );
   }
 
   Widget _buildOrderCard(Order order, Color surfaceColor, Color textColor, Color textLightColor, {bool showActions = false}) {
-    final currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: 'FCFA', decimalDigits: 0);
     final timeAgo = _getTimeAgo(order.createdAt);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -664,13 +742,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       ),
                     ),
                     if (order.customerPhone.isNotEmpty)
+                      // Hit target minimum 48x48pt (règle POS partner §1).
+                      // L'ancien IconButton avait `constraints: BoxConstraints()`
+                      // qui supprimait la taille minimale → cible ~20pt,
+                      // inatteignable en cuisine (audit partner 2026-04-15 §2).
                       IconButton(
-                        icon: IconManager.getIcon('phone', size: 20.r, color: AppColors.primary),
-                        onPressed: () {
-                          AppToast.showInfo(context: context, message: 'Appel: ${order.customerPhone}');
+                        icon: IconManager.getIcon('phone', size: 22.r, color: AppColors.primary),
+                        tooltip: 'Appeler ${order.customerPhone}',
+                        onPressed: () async {
+                          HapticFeedback.selectionClick();
+                          await launchPhoneCall(
+                            order.customerPhone,
+                            context: context,
+                          );
                         },
-                        constraints: BoxConstraints(),
-                        padding: EdgeInsets.zero,
                       ),
                   ],
                 ),
@@ -692,8 +777,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                         ),
                       ],
                     ),
-                    Text(
-                      currencyFormat.format(order.totalAmount ?? 0),
+                    ZeetMoney(
+                      amount: order.totalAmount ?? 0,
+                      currency: ZeetCurrency.fcfa,
                       style: TextStyle(
                         fontSize: 18.sp,
                         fontWeight: FontWeight.bold,
@@ -750,9 +836,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   Future<void> _confirmOrder(Order order) async {
+    // Haptic POS : feedback tactile immédiat sous service (audit §2).
+    await HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
+      await HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmee');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -762,6 +851,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   }
 
   Future<void> _cancelOrder(Order order) async {
+    await HapticFeedback.heavyImpact();
     final reason = await _showCancelDialog();
     if (reason == null || !mounted) return;
 
@@ -778,122 +868,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
 
   Future<String?> _showCancelDialog() async {
     final controller = TextEditingController();
+    // Le backend rejette desormais les refus sans raison (400). La modale
+    // desactive donc le bouton tant que le champ est vide — feedback visuel
+    // au lieu d'un tap silencieux.
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Refuser la commande'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Raison du refus...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final reason = controller.text.trim();
-              if (reason.isNotEmpty) {
-                Navigator.pop(context, reason);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          final trimmed = controller.text.trim();
+          final canSubmit = trimmed.isNotEmpty;
+          return AlertDialog(
+            title: const Text('Refuser la commande'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              onChanged: (_) => setLocalState(() {}),
+              decoration: const InputDecoration(
+                hintText: 'Raison du refus (obligatoire)',
+                helperText: 'Le client sera informe de ce motif',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
-            child: const Text('Confirmer'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.pop(context, trimmed)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor:
+                      AppColors.primary.withValues(alpha: 0.4),
+                  disabledForegroundColor: Colors.white70,
+                ),
+                child: const Text('Confirmer'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildStatusBadge(OrderStatus? status, Color textLightColor) {
     if (status == null) return const SizedBox.shrink();
-
-    Color bgColor;
-    final colorStr = status.color;
-    if (colorStr != null && colorStr.startsWith('#')) {
-      try {
-        bgColor = Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
-      } catch (_) {
-        bgColor = _fallbackStatusColor(status.value);
-      }
-    } else {
-      bgColor = _fallbackStatusColor(status.value);
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-      decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(4.r),
-      ),
-      child: Text(
-        status.displayLabel,
-        style: TextStyle(
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w600,
-          color: bgColor,
-        ),
-      ),
+    // ZeetStatusChip force couleur + icône + label (règle a11y POS partner,
+    // contraste WCAG AA garanti). Remplace l'ancien badge texte-seul
+    // (ratio 2.3:1, illisible en cuisine lumineuse).
+    return ZeetStatusChip(
+      status: _partnerStatusFor(status.value),
+      label: status.displayLabel,
+      dense: true,
     );
   }
 
-  Color _fallbackStatusColor(String? value) {
+  ZeetStatus _partnerStatusFor(String? value) {
     switch (value) {
       case 'pending':
-        return const Color(0xFFFFA500);
       case 'confirmed':
-        return const Color(0xFF2196F3);
       case 'preparing':
-        return const Color(0xFF2196F3);
+        return ZeetStatus.warning;
       case 'ready':
-        return const Color(0xFF4CD964);
-      case 'picked_up':
-        return const Color(0xFF9C27B0);
       case 'delivered':
-        return const Color(0xFF4CAF50);
+        return ZeetStatus.success;
+      case 'picked_up':
+        return ZeetStatus.info;
       case 'cancelled':
-        return AppColors.error;
+      case 'rejected':
+        return ZeetStatus.danger;
       default:
-        return Colors.grey;
+        return ZeetStatus.neutral;
     }
   }
 
-  Widget _buildEmptyState(String title, String subtitle) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
-
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(32.w),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconManager.getIcon('shopping_bag', size: 64.r, color: textLightColor.withValues(alpha: 0.3)),
-            SizedBox(height: 16.h),
-            Text(
-              title,
-              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: textColor),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 8.h),
-            Text(
-              subtitle,
-              style: TextStyle(fontSize: 14.sp, color: textLightColor),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
+  /// Resout l'etat ELOE pour une tab de commandes du home.
+  ZeetScreenState _resolveHomeOrderState(
+    OrdersListState state,
+    List<Order> filteredOrders,
+    bool isOnline,
+  ) {
+    switch (state.status) {
+      case OrdersListStatus.initial:
+      case OrdersListStatus.loading:
+        return ZeetScreenState.loading;
+      case OrdersListStatus.error:
+        if (!isOnline) return ZeetScreenState.offline;
+        return ZeetScreenState.error;
+      case OrdersListStatus.loaded:
+      case OrdersListStatus.loadingMore:
+        if (filteredOrders.isEmpty) return ZeetScreenState.empty;
+        return ZeetScreenState.content;
+    }
   }
 
   String _getTimeAgo(String? dateTimeStr) {

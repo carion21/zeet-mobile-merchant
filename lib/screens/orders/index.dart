@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/services/navigation_service.dart';
-import 'package:intl/intl.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class OrdersScreen extends ConsumerStatefulWidget {
   const OrdersScreen({super.key});
@@ -202,48 +205,78 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     Color textLightColor,
     bool isDark,
   ) {
-    switch (ordersState.status) {
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
+
+    final ZeetScreenState screenState = _resolveState(ordersState, isOnline);
+    final String? filter = ordersState.selectedStatus;
+
+    // Micro-copy contextualisée : si un filtre est actif, on le dit, sinon
+    // on reste dans le ton partner (direct, efficace, opérationnel).
+    final (String emptyTitle, String emptySubtitle) = filter != null
+        ? (
+            'Aucune commande "$filter"',
+            'Les commandes avec ce statut apparaîtront ici',
+          )
+        : (
+            'Aucune commande',
+            'Les nouvelles commandes arriveront ici',
+          );
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(ordersListProvider.notifier).refresh(),
+      child: ZeetScreenScaffold(
+        state: screenState,
+        onRetry: () => ref.read(ordersListProvider.notifier).load(),
+        emptyTitle: emptyTitle,
+        emptySubtitle: emptySubtitle,
+        emptyIcon: Icons.shopping_bag_outlined,
+        errorMessage: ordersState.errorMessage,
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          itemCount: ordersState.orders.length +
+              (ordersState.status == OrdersListStatus.loadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= ordersState.orders.length) {
+              return Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.h),
+                  child: const CircularProgressIndicator(),
+                ),
+              );
+            }
+            final order = ordersState.orders[index];
+            final showActions = order.status == 'pending';
+            return _buildOrderCard(
+              order,
+              surfaceColor,
+              textColor,
+              textLightColor,
+              isDark,
+              showActions,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Résout l'état ELOE depuis le [OrdersListState] merchant.
+  ZeetScreenState _resolveState(OrdersListState state, bool isOnline) {
+    switch (state.status) {
       case OrdersListStatus.initial:
       case OrdersListStatus.loading:
-        return const Center(child: CircularProgressIndicator());
-
+        return ZeetScreenState.loading;
       case OrdersListStatus.error:
-        return _buildErrorState(ordersState.errorMessage, textColor, textLightColor);
-
+        if (!isOnline) return ZeetScreenState.offline;
+        return ZeetScreenState.error;
       case OrdersListStatus.loaded:
       case OrdersListStatus.loadingMore:
-        if (ordersState.orders.isEmpty) {
-          return _buildEmptyState(textColor, textLightColor, ordersState.selectedStatus);
-        }
-        return RefreshIndicator(
-          onRefresh: () => ref.read(ordersListProvider.notifier).refresh(),
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-            itemCount: ordersState.orders.length +
-                (ordersState.status == OrdersListStatus.loadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index >= ordersState.orders.length) {
-                return Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.h),
-                    child: const CircularProgressIndicator(),
-                  ),
-                );
-              }
-              final order = ordersState.orders[index];
-              final showActions = order.status == 'pending';
-              return _buildOrderCard(
-                order,
-                surfaceColor,
-                textColor,
-                textLightColor,
-                isDark,
-                showActions,
-              );
-            },
-          ),
-        );
+        if (state.orders.isEmpty) return ZeetScreenState.empty;
+        return ZeetScreenState.content;
     }
   }
 
@@ -255,8 +288,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     bool isDark,
     bool showActions,
   ) {
-    final currencyFormat =
-        NumberFormat.currency(locale: 'fr_FR', symbol: 'FCFA', decimalDigits: 0);
     final timeAgo = _getTimeAgo(order.createdAt);
 
     return GestureDetector(
@@ -318,13 +349,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                         IconButton(
                           icon: IconManager.getIcon('phone',
                               size: 20.r, color: AppColors.primary),
-                          onPressed: () {
-                            AppToast.showInfo(
-                                context: context,
-                                message: 'Appel: ${order.customerPhone}');
+                          tooltip: 'Appeler ${order.customerPhone}',
+                          onPressed: () async {
+                            HapticFeedback.selectionClick();
+                            await launchPhoneCall(
+                              order.customerPhone,
+                              context: context,
+                            );
                           },
-                          constraints: BoxConstraints(),
-                          padding: EdgeInsets.zero,
                         ),
                     ],
                   ),
@@ -369,8 +401,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                                     fontSize: 14.sp,
                                     fontWeight: FontWeight.w500,
                                     color: textLightColor)),
-                            Text(
-                              currencyFormat.format(order.totalAmount ?? 0),
+                            ZeetMoney(
+                              amount: order.totalAmount ?? 0,
+                              currency: ZeetCurrency.fcfa,
                               style: TextStyle(
                                   fontSize: 18.sp,
                                   fontWeight: FontWeight.bold,
@@ -379,9 +412,15 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                           ],
                         ),
                         SizedBox(height: 12.h),
+                        // Hiérarchie accept/refuse (quickwin vague 2 §QW3) :
+                        // "Accepter" dominant (3/4 de la surface, ElevatedButton),
+                        // "Refuser" affaibli (1/4, TextButton rouge tamisé,
+                        // sans border) pour éviter les refus accidentels en
+                        // coup de feu.
                         Row(
                           children: [
                             Expanded(
+                              flex: 3,
                               child: ElevatedButton(
                                 onPressed: () => _confirmOrder(order),
                                 style: ElevatedButton.styleFrom(
@@ -398,13 +437,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                                         fontWeight: FontWeight.w600)),
                               ),
                             ),
-                            SizedBox(width: 12.w),
+                            SizedBox(width: 8.w),
                             Expanded(
-                              child: OutlinedButton(
+                              flex: 1,
+                              child: TextButton(
                                 onPressed: () => _cancelOrder(order),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: BorderSide(color: AppColors.primary),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red.shade400,
                                   padding: EdgeInsets.symmetric(vertical: 12.h),
                                   shape: RoundedRectangleBorder(
                                       borderRadius:
@@ -412,8 +451,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                                 ),
                                 child: Text('Refuser',
                                     style: TextStyle(
-                                        fontSize: 14.sp,
-                                        fontWeight: FontWeight.w600)),
+                                        fontSize: 13.sp,
+                                        fontWeight: FontWeight.w500)),
                               ),
                             ),
                           ],
@@ -428,8 +467,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                                 fontSize: 14.sp,
                                 fontWeight: FontWeight.w500,
                                 color: textLightColor)),
-                        Text(
-                          currencyFormat.format(order.totalAmount ?? 0),
+                        ZeetMoney(
+                          amount: order.totalAmount ?? 0,
+                          currency: ZeetCurrency.fcfa,
                           style: TextStyle(
                               fontSize: 18.sp,
                               fontWeight: FontWeight.bold,
@@ -445,9 +485,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   }
 
   Future<void> _confirmOrder(Order order) async {
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
+      HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmee');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -458,6 +500,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   }
 
   Future<void> _cancelOrder(Order order) async {
+    // Haptic de confirmation sur l'intention (quickwin vague 2 §QW5).
+    HapticFeedback.mediumImpact();
     final reason = await _showCancelDialog();
     if (reason == null || !mounted) return;
 
@@ -465,6 +509,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     final success =
         await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
+      // Succès critique → haptic lourd.
+      HapticFeedback.heavyImpact();
       AppToast.showWarning(context: context, message: 'Commande refusee');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -476,37 +522,49 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
 
   Future<String?> _showCancelDialog() async {
     final controller = TextEditingController();
+    // Le backend rejette desormais les refus sans raison (400). La modale
+    // desactive donc le bouton tant que le champ est vide — feedback visuel
+    // au lieu d'un tap silencieux.
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Refuser la commande'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Raison du refus...',
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final reason = controller.text.trim();
-              if (reason.isNotEmpty) {
-                Navigator.pop(context, reason);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocalState) {
+          final trimmed = controller.text.trim();
+          final canSubmit = trimmed.isNotEmpty;
+          return AlertDialog(
+            title: const Text('Refuser la commande'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              onChanged: (_) => setLocalState(() {}),
+              decoration: const InputDecoration(
+                hintText: 'Raison du refus (obligatoire)',
+                helperText: 'Le client sera informe de ce motif',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
-            child: const Text('Confirmer'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.pop(context, trimmed)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor:
+                      AppColors.primary.withValues(alpha: 0.4),
+                  disabledForegroundColor: Colors.white70,
+                ),
+                child: const Text('Confirmer'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -564,65 +622,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       default:
         return Colors.grey;
     }
-  }
-
-  Widget _buildEmptyState(Color textColor, Color textLightColor, String? filter) {
-    String title = 'Aucune commande';
-    String subtitle = 'Les commandes apparaitront ici';
-
-    if (filter != null) {
-      title = 'Aucune commande "$filter"';
-      subtitle = 'Les commandes avec ce statut\napparaitront ici';
-    }
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconManager.getIcon('shopping_bag',
-              size: 64.r, color: Colors.grey.shade300),
-          SizedBox(height: 16.h),
-          Text(
-            title,
-            style: TextStyle(
-                fontSize: 18.sp, fontWeight: FontWeight.w600, color: textColor),
-          ),
-          SizedBox(height: 8.h),
-          Text(
-            subtitle,
-            style: TextStyle(fontSize: 14.sp, color: textLightColor),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState(String? message, Color textColor, Color textLightColor) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconManager.getIcon('error', size: 64.r, color: AppColors.error),
-          SizedBox(height: 16.h),
-          Text(
-            message ?? 'Erreur de chargement',
-            style: TextStyle(
-                fontSize: 16.sp, fontWeight: FontWeight.w600, color: textColor),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 16.h),
-          ElevatedButton(
-            onPressed: () => ref.read(ordersListProvider.notifier).load(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Reessayer'),
-          ),
-        ],
-      ),
-    );
   }
 
   String _getTimeAgo(String? dateTimeStr) {

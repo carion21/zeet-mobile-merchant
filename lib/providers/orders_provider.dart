@@ -343,13 +343,25 @@ class OrderDetailNotifier extends StateNotifier<OrderDetailState> {
   }
 
   /// Annule la commande (POST /orders/:id/cancel).
+  /// [cancelReason] est **obligatoire** : le backend rejette les refus sans
+  /// motif (400). On trim + guard avant tout appel reseau.
   Future<bool> cancel(int orderId, {required String cancelReason}) async {
+    final trimmed = cancelReason.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(
+        status: OrderDetailStatus.loaded,
+        actionError:
+            'La raison du refus est obligatoire pour annuler une commande.',
+      );
+      return false;
+    }
+
     state = state.copyWith(status: OrderDetailStatus.acting, actionError: null);
 
     try {
       final order = await _orderService.cancelOrder(
         orderId,
-        cancelReason: cancelReason,
+        cancelReason: trimmed,
       );
       state = OrderDetailState(
         status: OrderDetailStatus.loaded,

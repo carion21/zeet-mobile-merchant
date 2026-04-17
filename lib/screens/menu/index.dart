@@ -1,15 +1,19 @@
 // lib/screens/menu/index.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/widgets/app_popup.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/menu_model.dart';
 import 'package:merchant/providers/menu_provider.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/menu_service.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class MenuScreen extends ConsumerStatefulWidget {
   const MenuScreen({super.key});
@@ -111,81 +115,56 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     Color textLightColor,
     bool isDark,
   ) {
-    switch (menusState.status) {
+    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
+      data: (v) => v,
+      orElse: () => true,
+    );
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(menusListProvider.notifier).refresh(),
+      child: ZeetScreenScaffold(
+        state: _resolveState(menusState, isOnline),
+        onRetry: () => ref.read(menusListProvider.notifier).load(),
+        loading: const ZeetSkeletonList(itemCount: 6, itemHeight: 140),
+        emptyTitle: 'Menu vide',
+        emptySubtitle: 'Ajoute des produits pour les afficher sur la fiche',
+        emptyIcon: Icons.restaurant_menu_outlined,
+        errorMessage: menusState.errorMessage,
+        child: ListView.builder(
+          padding: EdgeInsets.all(16.w),
+          itemCount: menusState.menus.length +
+              (menusState.status == MenusListStatus.loadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == menusState.menus.length) {
+              return Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.w),
+                  child: const CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            final menu = menusState.menus[index];
+            return _buildMenuCard(menu, textColor, textLightColor, isDark);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Résout l'état ELOE depuis le [MenusListState].
+  ZeetScreenState _resolveState(MenusListState state, bool isOnline) {
+    switch (state.status) {
       case MenusListStatus.initial:
       case MenusListStatus.loading:
-        return const Center(child: CircularProgressIndicator());
-
+        return ZeetScreenState.loading;
       case MenusListStatus.error:
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconManager.getIcon('error', color: Colors.red, size: 48.r),
-              SizedBox(height: 16.h),
-              Text(
-                menusState.errorMessage ?? 'Erreur de chargement',
-                style: TextStyle(color: textLightColor, fontSize: 14.sp),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 16.h),
-              ElevatedButton(
-                onPressed: () => ref.read(menusListProvider.notifier).load(),
-                child: const Text('Reessayer'),
-              ),
-            ],
-          ),
-        );
-
+        if (!isOnline) return ZeetScreenState.offline;
+        return ZeetScreenState.error;
       case MenusListStatus.loaded:
       case MenusListStatus.loadingMore:
-        if (menusState.menus.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconManager.getIcon('restaurant',
-                    color: textLightColor, size: 48.r),
-                SizedBox(height: 16.h),
-                Text(
-                  'Aucun menu',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: 8.h),
-                Text(
-                  'Creez votre premier menu pour commencer',
-                  style: TextStyle(color: textLightColor, fontSize: 13.sp),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => ref.read(menusListProvider.notifier).refresh(),
-          child: ListView.builder(
-            padding: EdgeInsets.all(16.w),
-            itemCount: menusState.menus.length +
-                (menusState.status == MenusListStatus.loadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index == menusState.menus.length) {
-                return Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.w),
-                    child: const CircularProgressIndicator(),
-                  ),
-                );
-              }
-
-              final menu = menusState.menus[index];
-              return _buildMenuCard(menu, textColor, textLightColor, isDark);
-            },
-          ),
-        );
+        if (state.menus.isEmpty) return ZeetScreenState.empty;
+        return ZeetScreenState.content;
     }
   }
 
@@ -579,21 +558,15 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         children: [
           // Image produit
           if (product?.imageUrl != null)
-            ClipRRect(
+            ZeetImage(
+              url: product!.imageUrl,
+              width: 48.w,
+              height: 48.w,
+              fit: BoxFit.cover,
               borderRadius: BorderRadius.circular(6.r),
-              child: Image.network(
-                product!.imageUrl!,
-                width: 48.w,
-                height: 48.w,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 48.w,
-                  height: 48.w,
-                  color: Colors.grey.withValues(alpha: 0.2),
-                  child: IconManager.getIcon('restaurant',
-                      color: textLightColor, size: 24.r),
-                ),
-              ),
+              backgroundColor: Colors.grey.withValues(alpha: 0.2),
+              errorWidget: IconManager.getIcon('restaurant',
+                  color: textLightColor, size: 24.r),
             )
           else
             Container(
@@ -622,8 +595,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                 ),
                 if (product?.price != null) ...[
                   SizedBox(height: 2.h),
-                  Text(
-                    '${product!.price!.toStringAsFixed(0)} F',
+                  ZeetMoney(
+                    amount: product!.price!,
+                    currency: ZeetCurrency.fcfa,
                     style: TextStyle(
                       color: AppColors.primary,
                       fontSize: 12.sp,
@@ -649,6 +623,20 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   }
 
   Future<void> _togglePublish(Menu menu) async {
+    final bool confirm = await AppPopup.showConfirmation(
+      context: context,
+      title: menu.isPublished ? 'Désactiver ce menu ?' : 'Activer ce menu ?',
+      message: menu.isPublished
+          ? 'Les clients ne pourront plus voir ce menu tant qu\'il est désactivé.'
+          : 'Les clients pourront commander depuis ce menu.',
+      confirmLabel: menu.isPublished ? 'Désactiver' : 'Activer',
+      cancelLabel: 'Annuler',
+      isDestructive: menu.isPublished,
+    );
+
+    if (!confirm || !mounted) return;
+
+    await HapticFeedback.mediumImpact();
     final notifier = ref.read(menuDetailProvider.notifier);
     final success = await notifier.publish(menu.id);
 
@@ -661,7 +649,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       }
       AppToast.showSuccess(
         context: context,
-        message: menu.isPublished ? 'Menu desactive' : 'Menu active',
+        message: menu.isPublished ? 'Menu désactivé' : 'Menu activé',
       );
     } else {
       final error = ref.read(menuDetailProvider).actionError;
