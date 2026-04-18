@@ -7,6 +7,9 @@ import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/constants/assets.dart';
+import 'package:merchant/core/utils/order_status_utils.dart';
+import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
+import 'package:merchant/core/widgets/preparation_timer.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
@@ -17,7 +20,7 @@ import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/services/incoming_order_dispatcher.dart';
 import 'package:merchant/services/navigation_service.dart';
-import 'package:merchant/screens/wallet/index.dart';
+import 'package:merchant/screens/root/index.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -32,7 +35,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this)
+      // Rebuild le sliver de commandes à chaque changement de tab
+      // (le contenu de la liste dépend de `_tabController.index`).
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
 
     Future.microtask(() {
       ref.read(authProvider.notifier).checkAuthStatus();
@@ -41,14 +49,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       ref.read(ordersListProvider.notifier).load();
     });
 
-    // Si le /me en arriere-plan decouvre des tokens invalides → login.
+    // Si le /me en arrière-plan découvre des tokens invalides → login.
     ref.listenManual(authProvider, (prev, next) {
       if (prev?.status == AuthStatus.authenticated &&
           next.status == AuthStatus.unauthenticated) {
         Routes.navigateAndRemoveAll(Routes.login);
       }
     });
-
   }
 
   @override
@@ -60,10 +67,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDark ? AppColors.darkBackground : Colors.white;
-    final surfaceColor = isDark ? AppColors.darkSurface : AppColors.white;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color backgroundColor = scheme.surface;
+    final Color surfaceColor = scheme.surface;
+    final Color textColor = scheme.onSurface;
+    final Color textLightColor = scheme.onSurfaceVariant;
 
     final pendingCount = ref.watch(pendingOrdersCountProvider);
     final dashboardSummary = ref.watch(dashboardProvider).summary;
@@ -74,43 +82,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       orElse: () => true,
     );
 
+    // Refactor M-11 : plus de `SizedBox(height: 400.h)` qui limite la
+    // TabBarView à un viewport fixe dans un SingleChildScrollView.
+    // Top : header + bandeaux. Bas : Expanded(TabBarView) qui prend
+    // tout l'espace → plus de double scroll, plus de contenu tronqué.
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
         child: Column(
-          children: [
-            // Bandeau hors ligne — ConnectivityBanner cable sur
-            // connectivityStatusProvider (zeet_ui). orElse: true = on
-            // suppose online pendant la 1re emission pour eviter un
-            // flash offline au demarrage.
+          children: <Widget>[
             ConnectivityBanner(isOnline: isOnline),
-
-            // Header moderne
             _buildModernHeader(textColor, textLightColor, pendingCount),
-
-            // Contenu defilable
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Carte de gains avec image de fond
-                    _buildEarningsCard(isDark, todayEarnings),
-
-                    SizedBox(height: 16.h),
-
-                    // Statistiques compactes
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.w),
-                      child: _buildCompactStats(textColor, textLightColor, surfaceColor, isDark),
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  HapticFeedback.lightImpact();
+                  await Future.wait(<Future<void>>[
+                    ref.read(dashboardProvider.notifier).loadSummary(),
+                    ref.read(ordersListProvider.notifier).refresh(),
+                  ]);
+                },
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: <Widget>[
+                    SliverToBoxAdapter(
+                      child: _buildEarningsCard(isDark, todayEarnings),
                     ),
-
-                    SizedBox(height: 20.h),
-
-                    // Section des commandes
-                    _buildOrdersSection(textColor, textLightColor, surfaceColor, pendingCount),
-
-                    SizedBox(height: 20.h),
+                    SliverToBoxAdapter(child: SizedBox(height: 16.h)),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.w),
+                        child: _buildCompactStats(
+                          textColor,
+                          textLightColor,
+                          surfaceColor,
+                          isDark,
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(child: SizedBox(height: 20.h)),
+                    SliverToBoxAdapter(
+                      child: _buildOrdersSectionHeader(
+                        textColor,
+                        textLightColor,
+                        pendingCount,
+                      ),
+                    ),
+                    _buildOrdersSliver(
+                      textColor,
+                      textLightColor,
+                      surfaceColor,
+                      isOnline,
+                    ),
+                    SliverToBoxAdapter(child: SizedBox(height: 24.h)),
                   ],
                 ),
               ),
@@ -118,7 +142,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
           ],
         ),
       ),
-      floatingActionButton: pendingCount > 0 ? _buildNewOrdersFAB(pendingCount) : null,
     );
   }
 
@@ -141,11 +164,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                 button: true,
                 child: GestureDetector(
                 onTap: () {
-                  Routes.navigateTo(Routes.profile);
+                  HapticFeedback.selectionClick();
+                  // Switch vers le tab Profil du RootScaffold (1 tap).
+                  ref.read(rootTabProvider.notifier).state = RootTab.profile;
                 },
+                // Avatar 48×48pt — hit target POS partner (M-E10).
                 child: Container(
-                  width: 40.w,
-                  height: 40.h,
+                  width: 48.w,
+                  height: 48.h,
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
@@ -154,16 +180,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                       ? ClipOval(
                           child: ZeetImage(
                             url: partnerProfile!.picture,
-                            width: 40.w,
-                            height: 40.h,
+                            width: 48.w,
+                            height: 48.h,
                             fit: BoxFit.cover,
                             errorWidget: Center(
-                              child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                              child: IconManager.getIcon('person_outline', size: 24.r, color: AppColors.primary),
                             ),
                           ),
                         )
                       : Center(
-                          child: IconManager.getIcon('person_outline', size: 22.r, color: AppColors.primary),
+                          child: IconManager.getIcon('person_outline', size: 24.r, color: AppColors.primary),
                         ),
                 ),
               ),
@@ -206,18 +232,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             top: -2,
                             child: Container(
                               padding: EdgeInsets.all(4.r),
-                              decoration: BoxDecoration(
+                              decoration: const BoxDecoration(
                                 color: AppColors.primary,
                                 shape: BoxShape.circle,
                               ),
-                              constraints: BoxConstraints(minWidth: 16.w, minHeight: 16.h),
+                              constraints: BoxConstraints(minWidth: 18.w, minHeight: 18.h),
                               child: Center(
                                 child: Text(
                                   '$newOrdersCount',
+                                  // 12sp minimum (DS §3). 10sp illisible sur tablette.
                                   style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 10.sp,
+                                    fontSize: 12.sp,
                                     fontWeight: FontWeight.bold,
+                                    height: 1,
                                   ),
                                 ),
                               ),
@@ -243,19 +271,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                     fontSize: 12.sp,
                   ),
                 ),
-                SizedBox(height: 2.h),
+                SizedBox(height: 4.h),
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7.w,
-                      height: 7.h,
-                      decoration: BoxDecoration(
-                        color: isOpen ? ZeetColors.success : Colors.grey,
-                        shape: BoxShape.circle,
-                      ),
+                  children: <Widget>[
+                    // Pastille 10×10pt (anti-daltonisme : taille + icône pleine/vide).
+                    Icon(
+                      isOpen ? Icons.circle : Icons.circle_outlined,
+                      size: 10.r,
+                      color: isOpen
+                          ? ZeetColors.success
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      semanticLabel: isOpen ? 'Ouvert' : 'Fermé',
                     ),
-                    SizedBox(width: 5.w),
+                    SizedBox(width: 6.w),
                     Text(
                       isOpen ? 'Ouvert' : 'Fermé',
                       style: TextStyle(
@@ -277,12 +306,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
   Widget _buildEarningsCard(bool isDark, double earnings) {
     final walletBackground = isDark ? AppAssets.darkWallet : AppAssets.lightWallet;
 
-    // Raccourci 3-clicks-rule partner : le wallet est accessible en 1 tap
-    // depuis le home en tapant sur la card "Gains du jour". Hit target full-card.
+    // Raccourci 3-clicks-rule partner : tap sur la card "Gains du jour"
+    // bascule vers le tab Portefeuille du RootScaffold (1 tap, zéro push).
     return GestureDetector(
       onTap: () async {
         await HapticFeedback.lightImpact();
-        Routes.push(const WalletScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
+        ref.read(rootTabProvider.notifier).state = RootTab.wallet;
       },
       child: Container(
       margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
@@ -344,6 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     final ordersToday = ref.watch(ordersTodayProvider);
     final rating = ref.watch(ratingProvider);
     final activeCarts = ref.watch(activeCartsProvider);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
@@ -351,21 +381,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
         color: surfaceColor,
         borderRadius: BorderRadius.circular(16.r),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.15),
+          color: scheme.outlineVariant,
           width: 1,
         ),
       ),
       child: Row(
-        children: [
-          // Commandes du jour
+        children: <Widget>[
+          // Commandes du jour — micro-copy contextualisée (neuro-UX).
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              children: <Widget>[
                 Text(
-                  'Commandes',
+                  'Traitées aujourd\'hui',
                   style: TextStyle(
                     color: textLightColor,
                     fontSize: 12.sp,
@@ -472,23 +500,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       child: Container(
         width: 1.w,
         height: 40.h,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.1)
-            : Colors.grey.withValues(alpha: 0.15),
+        color: Theme.of(context).colorScheme.outlineVariant,
       ),
     );
   }
 
-  Widget _buildOrdersSection(Color textColor, Color textLightColor, Color surfaceColor, int newOrdersCount) {
+  /// Header de la section "Mes commandes" — titre + shortcut tab orders
+  /// + TabBar "Nouvelles / En cours".
+  Widget _buildOrdersSectionHeader(
+    Color textColor,
+    Color textLightColor,
+    int newOrdersCount,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Titre de la section avec "Voir plus"
+      children: <Widget>[
+        // Titre + shortcut vers le tab Commandes (1 tap — switch tab).
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+            children: <Widget>[
               Text(
                 'Mes commandes',
                 style: TextStyle(
@@ -499,7 +532,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
               ),
               GestureDetector(
                 onTap: () {
-                  Routes.navigateTo(Routes.orders);
+                  HapticFeedback.selectionClick();
+                  ref.read(rootTabProvider.notifier).state = RootTab.orders;
                 },
                 child: Text(
                   'Voir plus',
@@ -513,19 +547,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ],
           ),
         ),
-
         SizedBox(height: 16.h),
 
-        // TabBar
+        // TabBar "Nouvelles / En cours".
         Container(
           margin: EdgeInsets.symmetric(horizontal: 16.w),
           decoration: BoxDecoration(
-            color: surfaceColor,
+            color: scheme.surface,
             borderRadius: BorderRadius.circular(12.r),
             border: Border.all(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.grey.withValues(alpha: 0.15),
+              color: scheme.outlineVariant,
               width: 1,
             ),
           ),
@@ -534,163 +565,120 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             labelColor: AppColors.primary,
             unselectedLabelColor: textLightColor,
             labelStyle: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-            unselectedLabelStyle: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500),
+            unselectedLabelStyle:
+                TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500),
             indicatorColor: AppColors.primary,
             indicatorWeight: 2.5,
             indicatorSize: TabBarIndicatorSize.tab,
             dividerColor: Colors.transparent,
-            tabs: [
+            tabs: <Widget>[
               Tab(text: 'Nouvelles ($newOrdersCount)'),
-              Tab(text: 'En cours'),
+              const Tab(text: 'En cours'),
             ],
           ),
         ),
-
         SizedBox(height: 16.h),
-
-        // Liste des commandes
-        SizedBox(
-          height: 400.h, // Hauteur fixe pour la liste
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildNewOrdersList(surfaceColor, textColor, textLightColor),
-              _buildActiveOrdersList(surfaceColor, textColor, textLightColor),
-            ],
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildNewOrdersFAB(int newOrdersCount) {
-    return FloatingActionButton(
-      tooltip: '$newOrdersCount nouvelles commandes à traiter',
-      onPressed: () {
-        // Passer directement a l'onglet "Nouvelles"
-        // Haptic POS (quickwin vague 2 §QW5).
-        HapticFeedback.selectionClick();
-        _tabController.animateTo(0);
+  /// Sliver listant les commandes du tab actif — évite le double-scroll
+  /// de l'ancien `TabBarView` dans `SizedBox(height: 400)` (issue M-11).
+  Widget _buildOrdersSliver(
+    Color textColor,
+    Color textLightColor,
+    Color surfaceColor,
+    bool isOnline,
+  ) {
+    final OrdersListState ordersState = ref.watch(ordersListProvider);
+    // Listen au TabController pour rebuild au swipe / tap de tab.
+    final int tabIndex = _tabController.index;
+    final List<Order> orders = tabIndex == 0
+        ? ordersState.pendingOrders
+        : ordersState.activeOrders;
+    final ZeetScreenState state =
+        _resolveHomeOrderState(ordersState, orders, isOnline);
+
+    if (state == ZeetScreenState.loading) {
+      return const SliverToBoxAdapter(
+        child: ZeetSkeletonList(itemCount: 3, itemHeight: 140),
+      );
+    }
+    if (state == ZeetScreenState.empty ||
+        state == ZeetScreenState.error ||
+        state == ZeetScreenState.offline) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 24.h),
+          child: ZeetEmptyState(
+            icon: state == ZeetScreenState.offline
+                ? Icons.wifi_off_rounded
+                : state == ZeetScreenState.error
+                    ? Icons.error_outline_rounded
+                    : Icons.shopping_bag_outlined,
+            title: state == ZeetScreenState.offline
+                ? 'Hors ligne'
+                : state == ZeetScreenState.error
+                    ? 'Chargement impossible'
+                    : tabIndex == 0
+                        ? 'Aucune nouvelle commande'
+                        : 'Aucune commande en cours',
+            description: state == ZeetScreenState.error
+                ? (ordersState.errorMessage ?? 'Une erreur est survenue.')
+                : tabIndex == 0
+                    ? 'Les nouvelles commandes apparaîtront ici.'
+                    : 'Les commandes actives apparaîtront ici.',
+            actionLabel: state == ZeetScreenState.error ? 'Réessayer' : null,
+            onAction: state == ZeetScreenState.error
+                ? () => ref.read(ordersListProvider.notifier).load()
+                : null,
+          ),
+        ),
+      );
+    }
+
+    return SliverList.builder(
+      itemCount: orders.length,
+      itemBuilder: (BuildContext context, int index) {
+        final Order order = orders[index];
+        return _buildOrderCard(
+          order,
+          surfaceColor,
+          textColor,
+          textLightColor,
+        );
       },
-      backgroundColor: AppColors.primary,
-      elevation: 4,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          IconManager.getIcon('shopping_bag', color: Colors.white, size: 28.r),
-          if (newOrdersCount > 0)
-            Positioned(
-              right: -6,
-              top: -6,
-              child: Container(
-                padding: EdgeInsets.all(5.r),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                constraints: BoxConstraints(minWidth: 10.w, minHeight: 10.h),
-                child: Center(
-                  child: Text(
-                    '$newOrdersCount',
-                    style: TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 
-  Widget _buildNewOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
-    final ordersState = ref.watch(ordersListProvider);
-    final pendingOrders = ordersState.pendingOrders;
-    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
-      data: (v) => v,
-      orElse: () => true,
-    );
-
-    return ZeetScreenScaffold(
-      state: _resolveHomeOrderState(ordersState, pendingOrders, isOnline),
-      onRetry: () => ref.read(ordersListProvider.notifier).load(),
-      emptyTitle: 'Aucune nouvelle commande',
-      emptySubtitle: 'Les nouvelles commandes apparaitront ici',
-      emptyIcon: Icons.shopping_bag_outlined,
-      errorMessage: ordersState.errorMessage,
-      child: ListView.builder(
-        padding: EdgeInsets.symmetric(vertical: 8.h),
-        itemCount: pendingOrders.length,
-        itemBuilder: (context, index) {
-          final order = pendingOrders[index];
-          return _buildOrderCard(order, surfaceColor, textColor, textLightColor, showActions: true);
-        },
-      ),
-    );
-  }
-
-  Widget _buildActiveOrdersList(Color surfaceColor, Color textColor, Color textLightColor) {
-    final ordersState = ref.watch(ordersListProvider);
-    final active = ordersState.activeOrders;
-    final isOnline = ref.watch(connectivityStatusProvider).maybeWhen(
-      data: (v) => v,
-      orElse: () => true,
-    );
-
-    return ZeetScreenScaffold(
-      state: _resolveHomeOrderState(ordersState, active, isOnline),
-      onRetry: () => ref.read(ordersListProvider.notifier).load(),
-      emptyTitle: 'Aucune commande en cours',
-      emptySubtitle: 'Les commandes actives apparaitront ici',
-      emptyIcon: Icons.shopping_bag_outlined,
-      errorMessage: ordersState.errorMessage,
-      child: ListView.builder(
-        padding: EdgeInsets.symmetric(vertical: 8.h),
-        itemCount: active.length,
-        itemBuilder: (context, index) {
-          final order = active[index];
-          return _buildOrderCard(order, surfaceColor, textColor, textLightColor);
-        },
-      ),
-    );
-  }
-
-  Widget _buildOrderCard(Order order, Color surfaceColor, Color textColor, Color textLightColor, {bool showActions = false}) {
+  Widget _buildOrderCard(Order order, Color surfaceColor, Color textColor, Color textLightColor) {
     final timeAgo = _getTimeAgo(order.createdAt);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // Actions inline disponibles selon le statut — atteint le POS "1-tap"
+    // pour les transitions critiques (issue C-04).
+    final Widget? inlineActions = _buildInlineActionsForStatus(order);
+    final String semantics =
+        'Commande ${order.code ?? order.id} — ${order.orderStatus?.displayLabel ?? ""} — ${order.customerName}';
 
-    return GestureDetector(
-      onTap: () {
-        Routes.pushOrderDetails(order.id);
-      },
-      child: Container(
+    return Semantics(
+      container: true,
+      button: true,
+      label: semantics,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          Routes.pushOrderDetails(order.id);
+        },
+        child: Container(
         margin: EdgeInsets.only(bottom: 12.h, left: 16.w, right: 16.w),
         decoration: BoxDecoration(
           color: surfaceColor,
           borderRadius: BorderRadius.circular(12.r),
+          // DS §2 : pas de BoxShadow sur cards (issue M-07). Border seule.
           border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.1)
-                : Colors.grey.withValues(alpha: 0.15),
+            color: scheme.outlineVariant,
             width: 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-              blurRadius: 4,
-              offset: Offset(0, 1),
-            ),
-          ],
         ),
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -700,12 +688,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
+                // Header — code, timer (pression neuro-UX §2), statut.
                 Row(
-                  children: [
+                  children: <Widget>[
                     Expanded(
                       child: Row(
-                        children: [
+                        children: <Widget>[
                           Text(
                             '#${order.code ?? order.id}',
                             style: TextStyle(
@@ -715,13 +703,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
                             ),
                           ),
                           SizedBox(width: 8.w),
-                          Text(
-                            timeAgo,
-                            style: TextStyle(
-                              fontSize: 12.sp,
-                              color: textLightColor,
+                          if (order.status == 'confirmed' ||
+                              order.status == 'preparing')
+                            PreparationTimer(
+                              createdAtIso: order.createdAt,
+                              dense: true,
+                            )
+                          else
+                            Text(
+                              timeAgo,
+                              style: TextStyle(
+                                fontSize: 12.sp,
+                                color: textLightColor,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -792,73 +787,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
             ),
           ),
 
-          // Actions
-          if (showActions)
+          // Actions inline ZeetButton (taille md = 48pt, haptic intégré,
+          // radius DS). La variante `ghost` sur le refus casse la parité
+          // visuelle accept/refus pour éviter les faux refus en coup de feu.
+          if (inlineActions != null)
             Container(
               padding: EdgeInsets.all(12.w),
               decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: textLightColor.withValues(alpha: 0.1))),
+                border: Border(top: BorderSide(color: scheme.outlineVariant)),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _confirmOrder(order),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 12.h),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                      ),
-                      child: Text('Accepter', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                  SizedBox(width: 12.w),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => _cancelOrder(order),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: BorderSide(color: AppColors.primary),
-                        padding: EdgeInsets.symmetric(vertical: 12.h),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                      ),
-                      child: Text('Refuser', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                ],
-              ),
+              child: inlineActions,
             ),
         ],
+        ),
         ),
       ),
     );
   }
 
   Future<void> _confirmOrder(Order order) async {
-    // Haptic POS : feedback tactile immédiat sous service (audit §2).
-    await HapticFeedback.mediumImpact();
+    HapticFeedback.mediumImpact();
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.confirm(order.id);
-    if (success && mounted) {
-      await HapticFeedback.heavyImpact();
-      AppToast.showSuccess(context: context, message: 'Commande confirmee');
+    if (!mounted) return;
+    if (success) {
+      HapticFeedback.heavyImpact();
+      AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
-    } else if (mounted) {
+    } else {
       final error = ref.read(orderDetailProvider).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur lors de la confirmation');
     }
   }
 
   Future<void> _cancelOrder(Order order) async {
-    await HapticFeedback.heavyImpact();
-    final reason = await _showCancelDialog();
+    HapticFeedback.heavyImpact();
+    if (!mounted) return;
+    // Bottom sheet chips presets — zéro saisie clavier en cuisine
+    // (issue C-02 / M-14, règle `zeet-pos-ergonomics` §3).
+    final reason = await showCancelReasonSheet(context);
     if (reason == null || !mounted) return;
 
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
-      AppToast.showWarning(context: context, message: 'Commande refusee');
+      AppToast.showWarning(context: context, message: 'Commande refusée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -866,84 +839,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
     }
   }
 
-  Future<String?> _showCancelDialog() async {
-    final controller = TextEditingController();
-    // Le backend rejette desormais les refus sans raison (400). La modale
-    // desactive donc le bouton tant que le champ est vide — feedback visuel
-    // au lieu d'un tap silencieux.
-    return showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocalState) {
-          final trimmed = controller.text.trim();
-          final canSubmit = trimmed.isNotEmpty;
-          return AlertDialog(
-            title: const Text('Refuser la commande'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              onChanged: (_) => setLocalState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Raison du refus (obligatoire)',
-                helperText: 'Le client sera informe de ce motif',
-                border: OutlineInputBorder(),
+  Future<void> _markPreparing(Order order) async {
+    HapticFeedback.mediumImpact();
+    final success = await ref
+        .read(orderDetailProvider.notifier)
+        .markPreparing(order.id);
+    if (!mounted) return;
+    if (success) {
+      HapticFeedback.heavyImpact();
+      AppToast.showSuccess(
+        context: context,
+        message: 'Préparation lancée',
+      );
+      ref.read(ordersListProvider.notifier).refresh();
+    } else {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur');
+    }
+  }
+
+  Future<void> _markReady(Order order) async {
+    HapticFeedback.mediumImpact();
+    final success =
+        await ref.read(orderDetailProvider.notifier).markReady(order.id);
+    if (!mounted) return;
+    if (success) {
+      HapticFeedback.heavyImpact();
+      AppToast.showSuccess(
+        context: context,
+        message: 'Commande prête pour collecte',
+      );
+      ref.read(ordersListProvider.notifier).refresh();
+    } else {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur');
+    }
+  }
+
+  /// Retourne les actions inline appropriées pour le statut — null si
+  /// aucune action merchant n'est disponible (livraison en cours etc.).
+  ///
+  /// Règle POS §4 : toute transition de statut critique doit être
+  /// accessible en 1 tap depuis la liste (issue C-04).
+  Widget? _buildInlineActionsForStatus(Order order) {
+    switch (order.status) {
+      case 'pending':
+        return Row(
+          children: <Widget>[
+            Expanded(
+              flex: 3,
+              child: ZeetButton.primary(
+                label: 'Accepter',
+                onPressed: () => _confirmOrder(order),
+                size: ZeetButtonSize.md,
+                fullWidth: true,
               ),
-              maxLines: 3,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler'),
+            SizedBox(width: 12.w),
+            Expanded(
+              flex: 2,
+              child: ZeetButton.ghost(
+                label: 'Refuser',
+                onPressed: () => _cancelOrder(order),
+                size: ZeetButtonSize.md,
               ),
-              ElevatedButton(
-                onPressed: canSubmit
-                    ? () => Navigator.pop(context, trimmed)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      AppColors.primary.withValues(alpha: 0.4),
-                  disabledForegroundColor: Colors.white70,
-                ),
-                child: const Text('Confirmer'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+            ),
+          ],
+        );
+      case 'confirmed':
+        return ZeetButton.primary(
+          label: 'Préparer',
+          onPressed: () => _markPreparing(order),
+          size: ZeetButtonSize.md,
+          fullWidth: true,
+          icon: Icons.restaurant_rounded,
+        );
+      case 'preparing':
+        return ZeetButton(
+          label: 'Prête',
+          onPressed: () => _markReady(order),
+          variant: ZeetButtonVariant.success,
+          size: ZeetButtonSize.md,
+          fullWidth: true,
+          icon: Icons.check_circle_rounded,
+        );
+      default:
+        return null;
+    }
   }
 
   Widget _buildStatusBadge(OrderStatus? status, Color textLightColor) {
     if (status == null) return const SizedBox.shrink();
     // ZeetStatusChip force couleur + icône + label (règle a11y POS partner,
-    // contraste WCAG AA garanti). Remplace l'ancien badge texte-seul
-    // (ratio 2.3:1, illisible en cuisine lumineuse).
+    // contraste WCAG AA garanti). Source de vérité : `partnerStatusFor`
+    // centralisée dans `core/utils/order_status_utils.dart`.
     return ZeetStatusChip(
-      status: _partnerStatusFor(status.value),
+      status: partnerStatusFor(status.value),
       label: status.displayLabel,
       dense: true,
     );
-  }
-
-  ZeetStatus _partnerStatusFor(String? value) {
-    switch (value) {
-      case 'pending':
-      case 'confirmed':
-      case 'preparing':
-        return ZeetStatus.warning;
-      case 'ready':
-      case 'delivered':
-        return ZeetStatus.success;
-      case 'picked_up':
-        return ZeetStatus.info;
-      case 'cancelled':
-      case 'rejected':
-        return ZeetStatus.danger;
-      default:
-        return ZeetStatus.neutral;
-    }
   }
 
   /// Resout l'etat ELOE pour une tab de commandes du home.
@@ -974,7 +968,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SingleTickerProvid
       final diff = DateTime.now().difference(dateTime);
 
       if (diff.inMinutes < 1) {
-        return 'A l\'instant';
+        return 'À l\'instant';
       } else if (diff.inMinutes < 60) {
         return 'Il y a ${diff.inMinutes} min';
       } else if (diff.inHours < 24) {

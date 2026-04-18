@@ -88,7 +88,7 @@ class AppToast {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: primaryColor.withOpacity(0.1),
+              color: primaryColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -120,7 +120,7 @@ class AppToast {
       borderRadius: BorderRadius.circular(12),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(isDarkMode ? 0.4 : 0.08),
+          color: Colors.black.withValues(alpha: isDarkMode ? 0.4 : 0.08),
           blurRadius: 12,
           offset: const Offset(0, 4),
           spreadRadius: 0,

@@ -12,7 +12,6 @@ import 'package:merchant/providers/menu_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/menu_service.dart';
-import 'package:merchant/services/navigation_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 class MenuScreen extends ConsumerStatefulWidget {
@@ -44,28 +43,23 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
-    final backgroundColor = isDark ? AppColors.darkBackground : Colors.white;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color textColor = scheme.onSurface;
+    final Color textLightColor = scheme.onSurfaceVariant;
+    final Color backgroundColor = scheme.surface;
 
     final menusState = ref.watch(menusListProvider);
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: IconManager.getIcon('arrow_back', color: textColor),
-          onPressed: () => Routes.goBack(),
-        ),
+      appBar: ZeetAppBar(
         title: _isSearching
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
                 style: TextStyle(color: textColor, fontSize: 16.sp),
                 decoration: InputDecoration(
-                  hintText: 'Rechercher un menu...',
+                  hintText: 'Rechercher un menu…',
                   hintStyle: TextStyle(color: textLightColor, fontSize: 14.sp),
                   border: InputBorder.none,
                 ),
@@ -73,21 +67,14 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   ref.read(menusListProvider.notifier).searchMenus(query);
                 },
               )
-            : Text(
-                'Mes Menus',
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-        centerTitle: !_isSearching,
-        actions: [
+            : const Text('Mes Menus'),
+        actions: <Widget>[
           IconButton(
             icon: IconManager.getIcon(
               _isSearching ? 'close' : 'search',
               color: textColor,
             ),
+            tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
             onPressed: () {
               setState(() {
                 _isSearching = !_isSearching;
@@ -104,6 +91,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateMenuDialog(context, isDark),
         backgroundColor: AppColors.primary,
+        tooltip: 'Créer un menu',
         child: IconManager.getIcon('add', color: Colors.white),
       ),
     );
@@ -174,26 +162,17 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     Color textLightColor,
     bool isDark,
   ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : Colors.white,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(12.r),
+        // DS §2 : border seule, pas de BoxShadow.
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.15),
+          color: scheme.outlineVariant,
           width: 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : Colors.grey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12.r),
@@ -670,7 +649,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               isDark ? AppColors.darkSurface : Colors.white,
           title: const Text('Supprimer le menu'),
           content: Text(
-              'Etes-vous sur de vouloir supprimer le menu "${menu.name}" ?'),
+              'Êtes-vous sûr de vouloir supprimer le menu "${menu.name}" ?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -697,7 +676,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       ref.read(menusListProvider.notifier).removeMenuFromList(menu.id);
       AppToast.showSuccess(
         context: context,
-        message: 'Menu supprime',
+        message: 'Menu supprimé',
       );
     } else {
       final error = ref.read(menuDetailProvider).actionError;
@@ -785,44 +764,28 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               ),
               SizedBox(height: 20.h),
 
-              // Bouton creer
-              SizedBox(
-                width: double.infinity,
-                height: 48.h,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final name = nameController.text.trim();
-                    if (name.isEmpty) {
-                      AppToast.showWarning(
-                        context: context,
-                        message: 'Veuillez saisir un nom pour le menu',
-                      );
-                      return;
-                    }
-
-                    Navigator.pop(context);
-                    await _createMenu(
-                      name: name,
-                      description: descriptionController.text.trim().isNotEmpty
-                          ? descriptionController.text.trim()
-                          : null,
+              // Bouton créer — ZeetButton primary md (48pt).
+              ZeetButton.primary(
+                label: 'Créer le menu',
+                onPressed: () async {
+                  final String name = nameController.text.trim();
+                  if (name.isEmpty) {
+                    AppToast.showWarning(
+                      context: context,
+                      message: 'Veuillez saisir un nom pour le menu',
                     );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.r),
-                    ),
-                  ),
-                  child: Text(
-                    'Creer le menu',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                    return;
+                  }
+                  Navigator.pop(context);
+                  await _createMenu(
+                    name: name,
+                    description: descriptionController.text.trim().isNotEmpty
+                        ? descriptionController.text.trim()
+                        : null,
+                  );
+                },
+                icon: Icons.add_rounded,
+                fullWidth: true,
               ),
             ],
           ),

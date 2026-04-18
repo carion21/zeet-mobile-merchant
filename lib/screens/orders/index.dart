@@ -4,6 +4,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/utils/order_status_utils.dart';
+import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
+import 'package:merchant/core/widgets/preparation_timer.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
@@ -50,56 +53,30 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDark ? AppColors.darkBackground : Colors.white;
-    final surfaceColor = isDark ? AppColors.darkSurface : AppColors.white;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color backgroundColor = scheme.surface;
+    final Color surfaceColor = scheme.surface;
+    final Color textColor = scheme.onSurface;
+    final Color textLightColor = scheme.onSurfaceVariant;
 
     final ordersState = ref.watch(ordersListProvider);
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            _buildHeader(textColor),
-
-            // Filtres horizontaux
-            _buildFilters(textColor, textLightColor, isDark, ordersState),
-
-            // Contenu
-            Expanded(
-              child: _buildContent(
-                ordersState,
-                surfaceColor,
-                textColor,
-                textLightColor,
-                isDark,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(Color textColor) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-      child: Row(
+      appBar: const ZeetAppBar(title: Text('Mes commandes')),
+      body: Column(
         children: [
-          IconButton(
-            icon: IconManager.getIcon('arrow_back', color: textColor),
-            onPressed: () => Routes.goBack(),
-          ),
-          SizedBox(width: 8.w),
-          Text(
-            'Mes commandes',
-            style: TextStyle(
-              color: textColor,
-              fontSize: 20.sp,
-              fontWeight: FontWeight.bold,
+          // Filtres horizontaux
+          _buildFilters(textColor, textLightColor, isDark, ordersState),
+
+          // Contenu
+          Expanded(
+            child: _buildContent(
+              ordersState,
+              surfaceColor,
+              textColor,
+              textLightColor,
+              isDark,
             ),
           ),
         ],
@@ -145,15 +122,15 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                 ),
               );
             }),
-            // Fallback si pas de statuts charges
+            // Fallback si pas de statuts chargés
             if (statusOptions.isEmpty) ...[
               _buildFilterChip('En attente', 'pending', selectedStatus == 'pending', textColor, textLightColor, isDark),
               SizedBox(width: 8.w),
-              _buildFilterChip('Confirmee', 'confirmed', selectedStatus == 'confirmed', textColor, textLightColor, isDark),
+              _buildFilterChip('Confirmée', 'confirmed', selectedStatus == 'confirmed', textColor, textLightColor, isDark),
               SizedBox(width: 8.w),
-              _buildFilterChip('En preparation', 'preparing', selectedStatus == 'preparing', textColor, textLightColor, isDark),
+              _buildFilterChip('En préparation', 'preparing', selectedStatus == 'preparing', textColor, textLightColor, isDark),
               SizedBox(width: 8.w),
-              _buildFilterChip('Prete', 'ready', selectedStatus == 'ready', textColor, textLightColor, isDark),
+              _buildFilterChip('Prête', 'ready', selectedStatus == 'ready', textColor, textLightColor, isDark),
             ],
           ],
         ),
@@ -169,29 +146,29 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     Color textLightColor,
     bool isDark,
   ) {
-    return InkWell(
-      onTap: () {
-        ref.read(ordersListProvider.notifier).filterByStatus(statusValue);
-      },
-      borderRadius: BorderRadius.circular(20.r),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary
-              : (isDark ? AppColors.darkSurface : Colors.grey[100]),
-          borderRadius: BorderRadius.circular(20.r),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : Colors.transparent,
-            width: 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : textColor,
-            fontSize: 13.sp,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+    // Chip pilule (ZeetRadius.pill = 999). Aligne le style sur
+    // wallet/_FilterChip pour cohérence inter-surface.
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: isSelected ? AppColors.primary : scheme.surfaceContainerLow,
+      borderRadius: const BorderRadius.all(Radius.circular(ZeetRadius.pill)),
+      child: InkWell(
+        borderRadius: const BorderRadius.all(Radius.circular(ZeetRadius.pill)),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          ref.read(ordersListProvider.notifier).filterByStatus(statusValue);
+        },
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40, minWidth: 72),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : textColor,
+              fontSize: 13.sp,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -249,14 +226,12 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
               );
             }
             final order = ordersState.orders[index];
-            final showActions = order.status == 'pending';
             return _buildOrderCard(
               order,
               surfaceColor,
               textColor,
               textLightColor,
               isDark,
-              showActions,
             );
           },
         ),
@@ -286,12 +261,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     Color textColor,
     Color textLightColor,
     bool isDark,
-    bool showActions,
   ) {
     final timeAgo = _getTimeAgo(order.createdAt);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget? inlineActions = _buildInlineActionsForStatus(order);
 
     return GestureDetector(
       onTap: () {
+        HapticFeedback.selectionClick();
         Routes.pushOrderDetails(order.id);
       },
       child: Container(
@@ -299,17 +276,15 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         decoration: BoxDecoration(
           color: surfaceColor,
           borderRadius: BorderRadius.circular(12.r),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+          // DS ZEET §2 : pas de BoxShadow sur cards, border à la place.
+          border: Border.all(
+            color: scheme.outlineVariant,
+            width: 1,
+          ),
         ),
         child: Column(
           children: [
-            // En-tete
+            // En-tête
             Padding(
               padding: EdgeInsets.all(16.w),
               child: Column(
@@ -362,19 +337,29 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                   ),
                   SizedBox(height: 8.h),
                   Row(
-                    children: [
-                      if (order.items.isNotEmpty) ...[
+                    children: <Widget>[
+                      if (order.items.isNotEmpty) ...<Widget>[
                         Text(
                           '${order.items.length} article${order.items.length > 1 ? 's' : ''}',
                           style: TextStyle(fontSize: 13.sp, color: textLightColor),
                         ),
                         SizedBox(width: 8.w),
-                        Text('', style: TextStyle(color: textLightColor)),
-                        SizedBox(width: 8.w),
                       ],
-                      Text(timeAgo,
-                          style:
-                              TextStyle(fontSize: 13.sp, color: textLightColor)),
+                      // Timer neuro-UX quand en préparation, sinon "il y a X min".
+                      if (order.status == 'confirmed' ||
+                          order.status == 'preparing')
+                        PreparationTimer(
+                          createdAtIso: order.createdAt,
+                          dense: true,
+                        )
+                      else
+                        Text(
+                          timeAgo,
+                          style: TextStyle(
+                            fontSize: 13.sp,
+                            color: textLightColor,
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -383,100 +368,43 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
 
             // Divider
             Divider(
-              color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+              color: scheme.outlineVariant,
               height: 1,
             ),
 
-            // Pied
+            // Pied — total + actions inline selon statut (issue C-04).
             Padding(
               padding: EdgeInsets.all(16.w),
-              child: showActions
-                  ? Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Total',
-                                style: TextStyle(
-                                    fontSize: 14.sp,
-                                    fontWeight: FontWeight.w500,
-                                    color: textLightColor)),
-                            ZeetMoney(
-                              amount: order.totalAmount ?? 0,
-                              currency: ZeetCurrency.fcfa,
-                              style: TextStyle(
-                                  fontSize: 18.sp,
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor),
-                            ),
-                          ],
+              child: Column(
+                children: <Widget>[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text(
+                        'Total',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w500,
+                          color: textLightColor,
                         ),
-                        SizedBox(height: 12.h),
-                        // Hiérarchie accept/refuse (quickwin vague 2 §QW3) :
-                        // "Accepter" dominant (3/4 de la surface, ElevatedButton),
-                        // "Refuser" affaibli (1/4, TextButton rouge tamisé,
-                        // sans border) pour éviter les refus accidentels en
-                        // coup de feu.
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: ElevatedButton(
-                                onPressed: () => _confirmOrder(order),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                  padding: EdgeInsets.symmetric(vertical: 12.h),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(8.r)),
-                                ),
-                                child: Text('Accepter',
-                                    style: TextStyle(
-                                        fontSize: 14.sp,
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                            ),
-                            SizedBox(width: 8.w),
-                            Expanded(
-                              flex: 1,
-                              child: TextButton(
-                                onPressed: () => _cancelOrder(order),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.red.shade400,
-                                  padding: EdgeInsets.symmetric(vertical: 12.h),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(8.r)),
-                                ),
-                                child: Text('Refuser',
-                                    style: TextStyle(
-                                        fontSize: 13.sp,
-                                        fontWeight: FontWeight.w500)),
-                              ),
-                            ),
-                          ],
+                      ),
+                      ZeetMoney(
+                        amount: order.totalAmount ?? 0,
+                        currency: ZeetCurrency.fcfa,
+                        style: TextStyle(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.bold,
+                          color: textColor,
                         ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Total',
-                            style: TextStyle(
-                                fontSize: 14.sp,
-                                fontWeight: FontWeight.w500,
-                                color: textLightColor)),
-                        ZeetMoney(
-                          amount: order.totalAmount ?? 0,
-                          currency: ZeetCurrency.fcfa,
-                          style: TextStyle(
-                              fontSize: 18.sp,
-                              fontWeight: FontWeight.bold,
-                              color: textColor),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  if (inlineActions != null) ...<Widget>[
+                    SizedBox(height: 12.h),
+                    inlineActions,
+                  ],
+                ],
+              ),
             ),
           ],
         ),
@@ -490,7 +418,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
-      AppToast.showSuccess(context: context, message: 'Commande confirmee');
+      AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -500,18 +428,18 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
   }
 
   Future<void> _cancelOrder(Order order) async {
-    // Haptic de confirmation sur l'intention (quickwin vague 2 §QW5).
     HapticFeedback.mediumImpact();
-    final reason = await _showCancelDialog();
+    // Bottom sheet chips presets (issue C-02 / M-14). Évite la saisie
+    // clavier en cuisine.
+    final reason = await showCancelReasonSheet(context);
     if (reason == null || !mounted) return;
 
     final notifier = ref.read(orderDetailProvider.notifier);
     final success =
         await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
-      // Succès critique → haptic lourd.
       HapticFeedback.heavyImpact();
-      AppToast.showWarning(context: context, message: 'Commande refusee');
+      AppToast.showWarning(context: context, message: 'Commande refusée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -520,108 +448,101 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     }
   }
 
-  Future<String?> _showCancelDialog() async {
-    final controller = TextEditingController();
-    // Le backend rejette desormais les refus sans raison (400). La modale
-    // desactive donc le bouton tant que le champ est vide — feedback visuel
-    // au lieu d'un tap silencieux.
-    return showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocalState) {
-          final trimmed = controller.text.trim();
-          final canSubmit = trimmed.isNotEmpty;
-          return AlertDialog(
-            title: const Text('Refuser la commande'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              onChanged: (_) => setLocalState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Raison du refus (obligatoire)',
-                helperText: 'Le client sera informe de ce motif',
-                border: OutlineInputBorder(),
+  Future<void> _markPreparing(Order order) async {
+    HapticFeedback.mediumImpact();
+    final success = await ref
+        .read(orderDetailProvider.notifier)
+        .markPreparing(order.id);
+    if (!mounted) return;
+    if (success) {
+      HapticFeedback.heavyImpact();
+      AppToast.showSuccess(
+          context: context, message: 'Préparation lancée');
+      ref.read(ordersListProvider.notifier).refresh();
+    } else {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur');
+    }
+  }
+
+  Future<void> _markReady(Order order) async {
+    HapticFeedback.mediumImpact();
+    final success =
+        await ref.read(orderDetailProvider.notifier).markReady(order.id);
+    if (!mounted) return;
+    if (success) {
+      HapticFeedback.heavyImpact();
+      AppToast.showSuccess(
+        context: context,
+        message: 'Commande prête pour collecte',
+      );
+      ref.read(ordersListProvider.notifier).refresh();
+    } else {
+      final error = ref.read(orderDetailProvider).actionError;
+      AppToast.showError(context: context, message: error ?? 'Erreur');
+    }
+  }
+
+  /// Actions inline selon le statut — `null` si aucune action merchant
+  /// n'est pertinente. Atteint la règle POS "1-tap" pour transitions
+  /// critiques (issue C-04).
+  Widget? _buildInlineActionsForStatus(Order order) {
+    switch (order.status) {
+      case 'pending':
+        return Row(
+          children: <Widget>[
+            Expanded(
+              flex: 3,
+              child: ZeetButton.primary(
+                label: 'Accepter',
+                onPressed: () => _confirmOrder(order),
+                size: ZeetButtonSize.md,
+                fullWidth: true,
               ),
-              maxLines: 3,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler'),
+            SizedBox(width: 8.w),
+            Expanded(
+              flex: 1,
+              child: ZeetButton.ghost(
+                label: 'Refuser',
+                onPressed: () => _cancelOrder(order),
+                size: ZeetButtonSize.md,
               ),
-              ElevatedButton(
-                onPressed: canSubmit
-                    ? () => Navigator.pop(context, trimmed)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      AppColors.primary.withValues(alpha: 0.4),
-                  disabledForegroundColor: Colors.white70,
-                ),
-                child: const Text('Confirmer'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+            ),
+          ],
+        );
+      case 'confirmed':
+        return ZeetButton.primary(
+          label: 'Préparer',
+          onPressed: () => _markPreparing(order),
+          size: ZeetButtonSize.md,
+          fullWidth: true,
+          icon: Icons.restaurant_rounded,
+        );
+      case 'preparing':
+        return ZeetButton(
+          label: 'Prête',
+          onPressed: () => _markReady(order),
+          variant: ZeetButtonVariant.success,
+          size: ZeetButtonSize.md,
+          fullWidth: true,
+          icon: Icons.check_circle_rounded,
+        );
+      default:
+        return null;
+    }
   }
 
   Widget _buildStatusBadge(OrderStatus? status) {
     if (status == null) return const SizedBox.shrink();
-
-    // Utiliser la couleur de l'API ou un fallback
-    Color bgColor;
-    final colorStr = status.color;
-    if (colorStr != null && colorStr.startsWith('#')) {
-      try {
-        bgColor = Color(
-            int.parse(colorStr.replaceFirst('#', '0xFF')));
-      } catch (_) {
-        bgColor = _fallbackStatusColor(status.value);
-      }
-    } else {
-      bgColor = _fallbackStatusColor(status.value);
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-      decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6.r),
-      ),
-      child: Text(
-        status.displayLabel,
-        style: TextStyle(
-          fontSize: 11.sp,
-          fontWeight: FontWeight.w600,
-          color: bgColor,
-        ),
-      ),
+    // ZeetStatusChip garantit contraste WCAG AA + icône + label
+    // sémantique (règle `zeet-pos-ergonomics` §6). Remplace l'ancien
+    // badge texte-seul à ratio 2.3:1 (issue M-02 15/04).
+    return ZeetStatusChip(
+      status: partnerStatusFor(status.value),
+      label: status.displayLabel,
+      dense: true,
     );
-  }
-
-  Color _fallbackStatusColor(String? value) {
-    switch (value) {
-      case 'pending':
-        return const Color(0xFFFFA500);
-      case 'confirmed':
-        return const Color(0xFF2196F3);
-      case 'preparing':
-        return const Color(0xFF2196F3);
-      case 'ready':
-        return const Color(0xFF4CD964);
-      case 'picked_up':
-        return const Color(0xFF9C27B0);
-      case 'delivered':
-        return const Color(0xFF4CAF50);
-      case 'cancelled':
-        return AppColors.error;
-      default:
-        return Colors.grey;
-    }
   }
 
   String _getTimeAgo(String? dateTimeStr) {
@@ -632,7 +553,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
       final diff = DateTime.now().difference(dateTime);
 
       if (diff.inMinutes < 1) {
-        return 'A l\'instant';
+        return 'À l\'instant';
       } else if (diff.inMinutes < 60) {
         return 'Il y a ${diff.inMinutes} min';
       } else if (diff.inHours < 24) {

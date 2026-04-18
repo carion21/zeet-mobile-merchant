@@ -23,6 +23,7 @@ import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 
+import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/incoming_order_payload.dart';
 import 'package:merchant/providers/incoming_order_provider.dart';
@@ -176,15 +177,15 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
             AppToast.showSuccess(
               context: ctx,
               message: code.isNotEmpty
-                  ? 'Commande $code acceptee'
-                  : 'Commande acceptee',
+                  ? 'Commande $code acceptée'
+                  : 'Commande acceptée',
             );
           } else {
             AppToast.showWarning(
               context: ctx,
               message: code.isNotEmpty
-                  ? 'Commande $code refusee'
-                  : 'Commande refusee',
+                  ? 'Commande $code refusée'
+                  : 'Commande refusée',
             );
           }
         }
@@ -450,7 +451,7 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
               minimumSize: Size(48.w, 36.h),
             ),
             child: Text(
-              'Reessayer',
+              'Réessayer',
               style: TextStyle(
                 fontSize: 13.sp,
                 fontWeight: FontWeight.w800,
@@ -504,73 +505,21 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
 
   Future<void> _showRejectDialog() async {
     // Pendant la saisie de la raison, on coupe la sonnerie pour ne pas hurler
-    // au-dessus du dialog. La sonnerie reprendra si le partner annule.
+    // au-dessus du bottom sheet. La sonnerie reprendra si le partner annule.
     await _stopRinging();
     if (!mounted) return;
 
-    final controller = TextEditingController();
-    // Le backend rejette desormais les refus sans raison (400). La modale
-    // desactive donc le bouton tant que le champ est vide.
-    final reason = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocalState) {
-            final trimmed = controller.text.trim();
-            final canSubmit = trimmed.isNotEmpty;
-            return AlertDialog(
-              title: const Text('Refuser la commande'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Indiquez la raison du refus. Le client en sera informe.',
-                    style: TextStyle(fontSize: 13.sp),
-                  ),
-                  SizedBox(height: 12.h),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    maxLines: 3,
-                    onChanged: (_) => setLocalState(() {}),
-                    decoration: const InputDecoration(
-                      hintText:
-                          'Ex: Produit en rupture, fermeture exceptionnelle...',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Annuler'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _bg,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: _bg.withValues(alpha: 0.4),
-                    disabledForegroundColor: Colors.white70,
-                  ),
-                  onPressed:
-                      canSubmit ? () => Navigator.pop(ctx, trimmed) : null,
-                  child: const Text('Refuser'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    // Bottom sheet chips presets — même widget partagé que les 3 autres
+    // call sites (home, orders, order_details). Zéro saisie clavier au
+    // clavier pour refuser une commande entrante (issue M-14).
+    final String? reason = await showCancelReasonSheet(context);
 
     if (!mounted) return;
 
     if (reason != null) {
       await ref.read(incomingOrderProvider.notifier).reject(reason: reason);
     } else {
-      // Annulation du dialog → on relance la sonnerie, la commande est toujours active.
+      // Annulation → on relance la sonnerie, la commande est toujours active.
       if (ref.read(incomingOrderProvider).phase == IncomingOrderPhase.ringing) {
         await _startRinging();
       }

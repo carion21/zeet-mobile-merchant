@@ -39,9 +39,10 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Si un token existe deja, on saute le splash et on va direct au home.
+  // Si un token existe déjà, on saute le splash et on va direct au
+  // RootScaffold (bottom nav). Sinon, on passe par le login.
   final hasTokens = await TokenService.instance.hasTokens();
-  final initialRoute = hasTokens ? Routes.home : Routes.login;
+  final initialRoute = hasTokens ? Routes.root : Routes.login;
 
   runApp(
     ProviderScope(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
 
@@ -24,9 +25,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   void initState() {
     super.initState();
 
-    // Animation du liquide qui monte (monte jusqu'à remplir tout l'écran)
+    // Animation du liquide — 1200ms (M-13). Le splash partner n'est
+    // pas un showcase : un restaurateur en coup de feu doit accéder
+    // aux commandes le plus vite possible.
     _liquidController = AnimationController(
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
 
@@ -36,7 +39,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     // Animation de fade pour le sous-texte
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
@@ -47,8 +50,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     // Démarrer l'animation du liquide immédiatement
     _liquidController.forward();
 
-    // Démarrer l'animation du sous-texte après un délai
-    Future.delayed(const Duration(milliseconds: 500), () {
+    // Démarrer l'animation du sous-texte après un délai court.
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) {
         _fadeController.forward();
       }
@@ -58,14 +61,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
     _checkAuthAndNavigate();
   }
 
-  /// Verifie l'etat d'authentification en parallele de l'animation.
-  /// Attend au minimum 3 secondes (duree de l'animation) avant de naviguer.
+  /// Vérifie l'état d'authentification en parallèle de l'animation.
+  /// Attend au minimum 1200ms (durée de l'animation) — suffisant pour
+  /// la reconnaissance de marque, pas plus. Un partner qui démarre
+  /// son app en plein service ne doit pas attendre 3s.
   ///
-  /// Filet de securite : un try/catch global assure qu'on navigue TOUJOURS,
-  /// meme si checkAuthStatus ou le provider crashe. Sinon la splash reste
-  /// figee a l'infini sur un futur non-awaited qui echoue silencieusement.
+  /// Filet de sécurité : try/catch global assure qu'on navigue TOUJOURS,
+  /// même si checkAuthStatus crashe.
   Future<void> _checkAuthAndNavigate() async {
-    final stopwatch = Stopwatch()..start();
+    final Stopwatch stopwatch = Stopwatch()..start();
 
     try {
       await ref.read(authProvider.notifier).checkAuthStatus();
@@ -75,16 +79,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     stopwatch.stop();
 
-    final elapsed = stopwatch.elapsedMilliseconds;
-    if (elapsed < 3000) {
-      await Future.delayed(Duration(milliseconds: 3000 - elapsed));
+    final int elapsed = stopwatch.elapsedMilliseconds;
+    const int minSplashDuration = 1200;
+    if (elapsed < minSplashDuration) {
+      await Future<void>.delayed(
+        Duration(milliseconds: minSplashDuration - elapsed),
+      );
     }
 
     if (!mounted) return;
 
     final authState = ref.read(authProvider);
     if (authState.status == AuthStatus.authenticated) {
-      Routes.navigateAndRemoveAll(Routes.home);
+      Routes.navigateAndRemoveAll(Routes.root);
     } else {
       Routes.navigateAndRemoveAll(Routes.login);
     }
@@ -100,7 +107,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
+    final backgroundColor = isDarkMode ? AppColors.darkBackground : AppColors.white;
     final primaryColor = Theme.of(context).colorScheme.primary;
     // Le texte a la même couleur que le fond pour être invisible au départ
     // et devient visible uniquement quand le liquide coloré passe derrière
@@ -131,10 +138,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
                 // Spacer pour centrer le contenu verticalement
                 const Spacer(flex: 5),
 
-                // Logo "ZEET"
+                // Logo "ZEET" — Inter w900 (M-04). Outfit n'est pas
+                // au DS ZEET (Inter uniquement, cf. `zeet-design-system` §3).
                 Text(
                   'ZEET',
-                  style: GoogleFonts.outfit(
+                  style: GoogleFonts.inter(
                     fontSize: 72.0.sp,
                     fontWeight: FontWeight.w900,
                     color: textColor,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
@@ -8,8 +9,8 @@ import 'package:merchant/core/widgets/app_popup.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
+import 'package:merchant/screens/root/index.dart';
 import 'package:merchant/screens/tickets/index.dart';
-import 'package:merchant/screens/wallet/index.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -43,9 +44,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _confirmLogout() async {
     final bool confirm = await AppPopup.showConfirmation(
       context: context,
-      title: 'Deconnexion',
-      message: 'Etes-vous sur de vouloir vous deconnecter ?',
-      confirmLabel: 'Deconnexion',
+      title: 'Déconnexion',
+      message: 'Êtes-vous sûr de vouloir vous déconnecter ?',
+      confirmLabel: 'Déconnexion',
       cancelLabel: 'Annuler',
       isDestructive: true,
     );
@@ -55,7 +56,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (confirm) {
       await ref.read(authProvider.notifier).logout();
       if (!mounted) return;
-      AppToast.showSuccess(context: context, message: 'Deconnexion reussie');
+      AppToast.showSuccess(context: context, message: 'Déconnexion réussie');
       Routes.navigateAndRemoveAll(Routes.login);
     }
   }
@@ -63,33 +64,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
-    final backgroundColor = isDark ? AppColors.darkBackground : const Color(0xFFF8F8F8);
-    final surfaceColor = isDark ? AppColors.darkSurface : Colors.white;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color textColor = scheme.onSurface;
+    final Color textLightColor = scheme.onSurfaceVariant;
+    final Color backgroundColor =
+        isDark ? AppColors.darkBackground : AppColors.background;
+    final Color surfaceColor = isDark ? AppColors.darkSurface : AppColors.white;
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      appBar: AppBar(
-        backgroundColor: backgroundColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: IconManager.getIcon('arrow_back', color: textColor),
-          onPressed: () => Routes.goBack(),
-        ),
-        title: Text(
-          'Mon Profil',
-          style: TextStyle(
-            color: textColor,
-            fontSize: 18.sp,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
+      appBar: ZeetAppBar(
+        title: const Text('Mon Profil'),
+        actions: <Widget>[
           if (!isEditing)
             IconButton(
               icon: IconManager.getIcon('edit', color: textColor),
+              tooltip: 'Modifier le profil',
               onPressed: () {
                 setState(() {
                   isEditing = true;
@@ -99,6 +89,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           else
             IconButton(
               icon: IconManager.getIcon('close', color: textColor),
+              tooltip: 'Annuler la modification',
               onPressed: () {
                 setState(() {
                   isEditing = false;
@@ -113,23 +104,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             padding: EdgeInsets.all(20.w),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Avatar et nom
+              children: <Widget>[
                 _buildProfileHeader(textColor),
-
                 SizedBox(height: 24.h),
-
-                // Statistiques du restaurant
                 _buildStatsCard(textColor, textLightColor, surfaceColor, isDark),
-
                 SizedBox(height: 24.h),
-
-                // Menu d'options de profil
                 _buildProfileOptions(textColor, textLightColor, surfaceColor),
-
                 SizedBox(height: 32.h),
-
-                // Bouton de déconnexion
                 _buildLogoutButton(),
               ],
             ),
@@ -246,9 +227,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(16.r),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.15),
+          color: Theme.of(context).colorScheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -396,7 +375,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Mes commandes',
             icon: 'history',
             onTap: () {
-              Routes.navigateTo(Routes.orders);
+              HapticFeedback.selectionClick();
+              // Switch tab — évite le push redondant d'OrdersScreen
+              // depuis le RootScaffold.
+              ref.read(rootTabProvider.notifier).state = RootTab.orders;
             },
             showDivider: true,
             textColor: textColor,
@@ -409,7 +391,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Portefeuille',
             icon: 'wallet',
             onTap: () {
-              Routes.push(const WalletScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
+              HapticFeedback.selectionClick();
+              ref.read(rootTabProvider.notifier).state = RootTab.wallet;
             },
             showDivider: true,
             textColor: textColor,
@@ -419,7 +402,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             title: 'Aide et support',
             icon: 'help',
             onTap: () {
-              Routes.push(const TicketsScreen(), style: ZeetTransitionStyle.sharedAxisVertical);
+              HapticFeedback.selectionClick();
+              Routes.push(
+                const TicketsScreen(),
+                style: ZeetTransitionStyle.sharedAxisVertical,
+              );
             },
             showDivider: false,
             textColor: textColor,
@@ -447,15 +434,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
             child: Row(
               children: [
+                // Icon slot 48×48pt (seuil POS partner §1, m-06).
                 Container(
-                  width: 40.w,
-                  height: 40.h,
+                  width: 48.w,
+                  height: 48.h,
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8.r),
+                    borderRadius: BorderRadius.circular(ZeetRadius.md),
                   ),
                   child: Center(
-                    child: IconManager.getIcon(icon, color: AppColors.primary, size: 20.r),
+                    child: IconManager.getIcon(icon, color: AppColors.primary, size: 22.r),
                   ),
                 ),
                 SizedBox(width: 16.w),
@@ -487,20 +475,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildLogoutButton() {
-    return TextButton.icon(
+    return ZeetButton(
+      label: 'Déconnexion',
       onPressed: _confirmLogout,
-      icon: IconManager.getIcon('logout', color: Colors.red, size: 20.r),
-      label: Text(
-        'Déconnexion',
-        style: TextStyle(
-          color: Colors.red,
-          fontSize: 16.sp,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-      ),
+      variant: ZeetButtonVariant.danger,
+      size: ZeetButtonSize.md,
+      icon: Icons.logout_rounded,
+      fullWidth: true,
     );
   }
 }

@@ -315,7 +315,7 @@ class AppPopup {
                 decoration: inputDecoration ??
                     BoxDecoration(
                       color: _isDarkMode(context)
-                          ? AppColors.darkSurface.withOpacity(0.7)
+                          ? AppColors.darkSurface.withValues(alpha: 0.7)
                           : CupertinoColors.systemGrey6,
                       borderRadius: BorderRadius.circular(8.0),
                     ),
@@ -392,8 +392,8 @@ class AppPopup {
                   fillColor: _isDarkMode(context) ? AppColors.darkSurface : null,
                   hintStyle: TextStyle(
                     color: _isDarkMode(context)
-                        ? AppColors.darkTextLight.withOpacity(0.6)
-                        : AppColors.textLight.withOpacity(0.6),
+                        ? AppColors.darkTextLight.withValues(alpha: 0.6)
+                        : AppColors.textLight.withValues(alpha: 0.6),
                   ),
                 ),
                 style: TextStyle(
@@ -548,7 +548,7 @@ class AppPopup {
                       ),
                       onTap: () => Navigator.of(context).pop(option.value),
                     );
-                  }).toList(),
+                  }),
                   if (showCancel)
                     ListTile(
                       title: Text(cancelLabel, textAlign: TextAlign.center),
@@ -607,14 +607,18 @@ class AppPopup {
     }
 
     if (future != null) {
+      // Capture le NavigatorState AVANT `await` pour éviter le lint
+      // `use_build_context_synchronously` : on n'a plus besoin du
+      // BuildContext après le futur (issue M-12).
+      final NavigatorState navigator = Navigator.of(context);
       future.then((value) {
-        if (Navigator.canPop(context)) {
-          Navigator.of(context).pop();
+        if (navigator.canPop()) {
+          navigator.pop();
         }
         return value;
       }).catchError((error) {
-        if (Navigator.canPop(context)) {
-          Navigator.of(context).pop();
+        if (navigator.canPop()) {
+          navigator.pop();
         }
         throw error;
       });

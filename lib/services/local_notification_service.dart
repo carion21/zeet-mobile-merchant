@@ -35,6 +35,21 @@ const String kIncomingOrderChannelName = 'Nouvelles commandes';
 const String kIncomingOrderChannelDesc =
     'Alertes prioritaires avec sonnerie forte pour les nouvelles commandes entrantes.';
 
+/// Canal pour les mises à jour de statut (annulation client, OTP, livreur
+/// assigné). Importance HIGH : son + vibration mais PAS d'alarme — le
+/// partner peut vouloir rester concentré sur la cuisine.
+const String kOrderUpdateChannelId = 'zeet_partner_order_update';
+const String kOrderUpdateChannelName = 'Mises à jour commandes';
+const String kOrderUpdateChannelDesc =
+    'Notifications sur le cycle de vie d\'une commande (livreur assigné, annulation, OTP).';
+
+/// Canal marketing : offres plateforme, promos, actualités. Importance
+/// DEFAULT : pas de son, l'utilisateur peut couper entièrement le canal.
+const String kMarketingChannelId = 'zeet_partner_marketing';
+const String kMarketingChannelName = 'Actualités ZEET';
+const String kMarketingChannelDesc =
+    'Offres plateforme, nouveautés et communications non urgentes.';
+
 /// Signature du callback appele quand l'utilisateur tape la notification.
 typedef NotificationTapHandler = Future<void> Function(
   Map<String, dynamic> payload,
@@ -110,24 +125,48 @@ class LocalNotificationService {
   }
 
   static Future<void> _createChannel() async {
-    const channel = AndroidNotificationChannel(
+    // Canal 1 — Nouvelles commandes (max, sonnerie, FullScreenIntent).
+    const AndroidNotificationChannel incomingChannel =
+        AndroidNotificationChannel(
       kIncomingOrderChannelId,
       kIncomingOrderChannelName,
       description: kIncomingOrderChannelDesc,
       importance: Importance.max,
-      // Son par defaut du canal — joue meme si mode vibreur sur la plupart
-      // des devices grace a USAGE_ALARM (configure au niveau de la notif).
       playSound: true,
-      // Vibration pattern long pour simuler un appel entrant.
       enableVibration: true,
-      vibrationPattern: null, // Le pattern est dans la notif (per-message)
-      // Affiche sur l'ecran de verrouillage.
       showBadge: true,
+    );
+
+    // Canal 2 — Mises à jour commandes (high, son par défaut).
+    // Couvre : annulation client, livreur assigné, OTP pickup changé.
+    const AndroidNotificationChannel orderUpdateChannel =
+        AndroidNotificationChannel(
+      kOrderUpdateChannelId,
+      kOrderUpdateChannelName,
+      description: kOrderUpdateChannelDesc,
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+      showBadge: true,
+    );
+
+    // Canal 3 — Marketing (default, silencieux, coupable par l'user).
+    const AndroidNotificationChannel marketingChannel =
+        AndroidNotificationChannel(
+      kMarketingChannelId,
+      kMarketingChannelName,
+      description: kMarketingChannelDesc,
+      importance: Importance.defaultImportance,
+      playSound: false,
+      enableVibration: false,
+      showBadge: false,
     );
 
     final androidImpl = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await androidImpl?.createNotificationChannel(channel);
+    await androidImpl?.createNotificationChannel(incomingChannel);
+    await androidImpl?.createNotificationChannel(orderUpdateChannel);
+    await androidImpl?.createNotificationChannel(marketingChannel);
   }
 
   /// Affiche une notification FullScreenIntent pour une nouvelle commande.

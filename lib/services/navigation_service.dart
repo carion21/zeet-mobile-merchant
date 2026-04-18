@@ -2,11 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:merchant/screens/splash/index.dart';
 import 'package:merchant/screens/auth/login/index.dart';
-import 'package:merchant/screens/home/index.dart';
-import 'package:merchant/screens/orders/index.dart';
 import 'package:merchant/screens/order_details/index.dart';
-import 'package:merchant/screens/profile/index.dart';
 import 'package:merchant/screens/menu/index.dart';
+import 'package:merchant/screens/root/index.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 /// Service de navigation centralisé de l'app Merchant.
@@ -24,19 +22,25 @@ class Routes {
 
   // Définition des routes statiques
   static const String splash = '/';
+  static const String root = '/root';
   static const String home = '/home';
   static const String login = '/login';
   static const String orders = '/orders';
   static const String profile = '/profile';
   static const String menu = '/menu';
 
-  // Définition des constructeurs de widgets pour chaque route
+  // Définition des constructeurs de widgets pour chaque route.
+  // Les routes `home`, `orders`, `profile` pointent TOUTES sur
+  // [RootScaffold] pour préserver la cohérence de navigation (tout
+  // accès passe par le bottom bar) tout en restant compatible avec
+  // les anciens `Routes.navigateTo(Routes.home/...)` historiques.
   static final Map<String, WidgetBuilder> routes = {
     splash: (context) => const SplashScreen(),
     login: (context) => const LoginScreen(),
-    home: (context) => const HomeScreen(),
-    orders: (context) => const OrdersScreen(),
-    profile: (context) => const ProfileScreen(),
+    root: (context) => const RootScaffold(),
+    home: (context) => const RootScaffold(),
+    orders: (context) => const RootScaffold(),
+    profile: (context) => const RootScaffold(),
     menu: (context) => const MenuScreen(),
   };
 

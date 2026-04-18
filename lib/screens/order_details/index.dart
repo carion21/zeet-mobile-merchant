@@ -4,6 +4,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/utils/order_status_utils.dart';
+import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
+import 'package:merchant/core/widgets/preparation_timer.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
@@ -38,11 +41,12 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final backgroundColor = isDark ? AppColors.darkBackground : Colors.white;
-    final surfaceColor = isDark ? AppColors.darkSurface : AppColors.white;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
-    final dividerColor = isDark ? Colors.grey.shade700 : Colors.grey.shade200;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color backgroundColor = scheme.surface;
+    final Color surfaceColor = scheme.surface;
+    final Color textColor = scheme.onSurface;
+    final Color textLightColor = scheme.onSurfaceVariant;
+    final Color dividerColor = scheme.outlineVariant;
 
     final detailState = ref.watch(orderDetailProvider);
 
@@ -121,7 +125,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                             .read(orderDetailProvider.notifier)
                             .load(widget.orderId),
                         icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Reessayer'),
+                        label: const Text('Réessayer'),
                       ),
                     ],
                   ),
@@ -152,7 +156,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                           .read(orderDetailProvider.notifier)
                           .load(widget.orderId),
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Reessayer'),
+                      label: const Text('Réessayer'),
                     ),
                   ],
                 ),
@@ -333,24 +337,41 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(16.r),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.15),
+          color: Theme.of(context).colorScheme.outlineVariant,
           width: 1,
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Statut de la commande',
-            style: TextStyle(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w600,
-              color: textColor,
-            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              Text(
+                'Statut de la commande',
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+              ),
+              _buildStatusBadge(order.orderStatus),
+            ],
           ),
-          _buildStatusBadge(order.orderStatus),
+          // Timer de préparation pour confirmed/preparing — pression
+          // positive neuro-UX §2 (issue m-09).
+          if (order.status == 'confirmed' || order.status == 'preparing') ...<Widget>[
+            SizedBox(height: 12.h),
+            Row(
+              children: <Widget>[
+                Text(
+                  'Temps de préparation : ',
+                  style: TextStyle(fontSize: 13.sp, color: textLightColor),
+                ),
+                PreparationTimer(createdAtIso: order.createdAt),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -358,33 +379,13 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Widget _buildStatusBadge(OrderStatus? status) {
     if (status == null) return const SizedBox.shrink();
-
-    Color bgColor;
-    final colorStr = status.color;
-    if (colorStr != null && colorStr.startsWith('#')) {
-      try {
-        bgColor = Color(int.parse(colorStr.replaceFirst('#', '0xFF')));
-      } catch (_) {
-        bgColor = _fallbackStatusColor(status.value);
-      }
-    } else {
-      bgColor = _fallbackStatusColor(status.value);
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8.r),
-      ),
-      child: Text(
-        status.displayLabel,
-        style: TextStyle(
-          fontSize: 12.sp,
-          fontWeight: FontWeight.w600,
-          color: bgColor,
-        ),
-      ),
+    // ZeetStatusChip force couleur + icône + label sémantique. Contraste
+    // WCAG AA garanti — lisible en cuisine fluorescente comme en plein soleil.
+    // Remplace l'ancien badge texte-seul (ratio 2.3:1) signalé C-01.
+    return ZeetStatusChip(
+      status: partnerStatusFor(status.value),
+      label: status.displayLabel,
+      dense: true,
     );
   }
 
@@ -396,9 +397,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(16.r),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.grey.withValues(alpha: 0.15),
+          color: Theme.of(context).colorScheme.outlineVariant,
           width: 1,
         ),
       ),
@@ -407,11 +406,13 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           Container(
             padding: EdgeInsets.all(12.w),
             decoration: BoxDecoration(
-              color: const Color(0xFF4CD964).withValues(alpha: 0.1),
+              // Aligné sur le token sémantique ZEET (#10B981), pas la couleur
+              // Material iOS #4CD964 historique (issue C-05).
+              color: AppColors.success.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12.r),
             ),
             child: IconManager.getIcon('person_outline',
-                color: const Color(0xFF4CD964), size: 24.r),
+                color: AppColors.success, size: 24.r),
           ),
           SizedBox(width: 12.w),
           Expanded(
@@ -574,9 +575,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         Container(
           padding: EdgeInsets.all(16.w),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.05)
-                : Colors.grey.withValues(alpha: 0.05),
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12.r),
           ),
           child: Row(
@@ -728,9 +727,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             color: surfaceColor,
             borderRadius: BorderRadius.circular(12.r),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : Colors.grey.withValues(alpha: 0.15),
+              color: Theme.of(context).colorScheme.outlineVariant,
             ),
           ),
           child: otp != null
@@ -765,13 +762,10 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                       style: TextStyle(fontSize: 14.sp, color: textLightColor),
                     ),
                     SizedBox(height: 12.h),
-                    ElevatedButton(
+                    ZeetButton.primary(
+                      label: 'Voir le code OTP',
                       onPressed: () => _getOtp(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Voir le code OTP'),
+                      icon: Icons.visibility_rounded,
                     ),
                   ],
                 ),
@@ -860,15 +854,21 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       return const SizedBox.shrink();
     }
 
+    // Action bar overlay bottom — ombre légère tolérée (DS §2 exception
+    // "overlay"). Seule ombre résiduelle du projet, volontaire.
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: EdgeInsets.all(20.w),
       decoration: BoxDecoration(
         color: surfaceColor,
-        boxShadow: [
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant, width: 1),
+        ),
+        boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
             blurRadius: 10,
-            offset: Offset(0, -2),
+            offset: const Offset(0, -2),
           ),
         ],
       ),
@@ -884,132 +884,63 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Widget _buildActionsForStatus(Order order, bool isActing) {
+    // CTAs `ZeetButton` (size `lg` = 56pt) — règle `zeet-pos-ergonomics` §1 :
+    // hit target ≥ 56pt pour actions primaires en cuisine. Remplace les
+    // anciens `ElevatedButton`/`OutlinedButton` à ~44pt (issue M-03).
     switch (order.status) {
       case 'pending':
         return Row(
-          children: [
+          children: <Widget>[
             Expanded(
-              child: OutlinedButton(
+              child: ZeetButton(
+                label: 'Refuser',
                 onPressed: isActing ? null : () => _cancelOrder(order),
-                style: OutlinedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 14.h),
-                  side: BorderSide(color: AppColors.primary, width: 1.5),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r)),
-                ),
-                child: Text(
-                  'Refuser',
-                  style: TextStyle(
-                    fontSize: 15.sp,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
+                variant: ZeetButtonVariant.secondary,
+                size: ZeetButtonSize.lg,
+                fullWidth: true,
               ),
             ),
             SizedBox(width: 12.w),
             Expanded(
-              child: ElevatedButton(
+              child: ZeetButton.primary(
+                label: 'Accepter',
                 onPressed: isActing ? null : () => _confirmOrder(order),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: EdgeInsets.symmetric(vertical: 14.h),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.r)),
-                  elevation: 0,
-                ),
-                child: isActing
-                    ? SizedBox(
-                        width: 20.w,
-                        height: 20.h,
-                        child: const CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        'Accepter',
-                        style: TextStyle(
-                          fontSize: 15.sp,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
+                size: ZeetButtonSize.lg,
+                fullWidth: true,
+                loading: isActing,
               ),
             ),
           ],
         );
 
       case 'confirmed':
-        return SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: isActing ? null : () => _markPreparing(order),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: EdgeInsets.symmetric(vertical: 14.h),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12.r)),
-              elevation: 0,
-            ),
-            child: isActing
-                ? SizedBox(
-                    width: 20.w,
-                    height: 20.h,
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    'Commencer la preparation',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-          ),
+        return ZeetButton.primary(
+          label: 'Commencer la préparation',
+          onPressed: isActing ? null : () => _markPreparing(order),
+          size: ZeetButtonSize.lg,
+          fullWidth: true,
+          loading: isActing,
+          icon: Icons.restaurant_rounded,
         );
 
       case 'preparing':
-        return SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: isActing ? null : () => _markReady(order),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ZeetColors.success,
-              padding: EdgeInsets.symmetric(vertical: 14.h),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12.r)),
-              elevation: 0,
-            ),
-            child: isActing
-                ? SizedBox(
-                    width: 20.w,
-                    height: 20.h,
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    'Commande prete',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-          ),
+        return ZeetButton(
+          label: 'Commande prête',
+          onPressed: isActing ? null : () => _markReady(order),
+          variant: ZeetButtonVariant.success,
+          size: ZeetButtonSize.lg,
+          fullWidth: true,
+          loading: isActing,
+          icon: Icons.check_circle_rounded,
         );
 
       case 'ready':
       case 'picked_up':
-        // Pas d'action directe, le rider gere la suite
+        // Pas d'action directe, le rider gère la suite. Info claire
+        // plutôt qu'un CTA qui ne ferait rien (anti-pattern POS).
         return Row(
-          children: [
-            IconManager.getIcon('info', size: 20.r, color: Colors.grey),
+          children: <Widget>[
+            IconManager.getIcon('info', size: 20.r, color: AppColors.textLight),
             SizedBox(width: 8.w),
             Expanded(
               child: Text(
@@ -1018,7 +949,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                     : 'Le livreur est en route',
                 style: TextStyle(
                   fontSize: 14.sp,
-                  color: Colors.grey,
+                  color: AppColors.textLight,
                 ),
               ),
             ),
@@ -1042,7 +973,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
-      AppToast.showSuccess(context: context, message: 'Commande confirmee');
+      AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -1073,7 +1004,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     if (success && mounted) {
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(
-          context: context, message: 'Commande prete pour collecte');
+          context: context, message: 'Commande prête pour collecte');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
       final error = ref.read(orderDetailProvider).actionError;
@@ -1083,14 +1014,16 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Future<void> _cancelOrder(Order order) async {
     HapticFeedback.mediumImpact();
-    final reason = await _showCancelDialog();
+    // Bottom sheet chips presets — évite la saisie clavier en cuisine
+    // (issue C-02 de l'audit, règle zeet-pos-ergonomics §3).
+    final reason = await showCancelReasonSheet(context);
     if (reason == null || !mounted) return;
 
     final notifier = ref.read(orderDetailProvider.notifier);
     final success = await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
-      AppToast.showWarning(context: context, message: 'Commande annulee');
+      AppToast.showWarning(context: context, message: 'Commande annulée');
       ref.read(ordersListProvider.notifier).refresh();
       Routes.goBack();
     } else if (mounted) {
@@ -1122,73 +1055,4 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     }
   }
 
-  Future<String?> _showCancelDialog() async {
-    final controller = TextEditingController();
-    // Le backend rejette desormais les refus sans raison (400). La modale
-    // desactive donc le bouton tant que le champ est vide — feedback visuel
-    // au lieu d'un tap silencieux.
-    return showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocalState) {
-          final trimmed = controller.text.trim();
-          final canSubmit = trimmed.isNotEmpty;
-          return AlertDialog(
-            title: const Text('Refuser la commande'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              onChanged: (_) => setLocalState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Raison du refus (obligatoire)',
-                helperText: 'Le client sera informe de ce motif',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler'),
-              ),
-              ElevatedButton(
-                onPressed: canSubmit
-                    ? () => Navigator.pop(context, trimmed)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      AppColors.primary.withValues(alpha: 0.4),
-                  disabledForegroundColor: Colors.white70,
-                ),
-                child: const Text('Confirmer'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Color _fallbackStatusColor(String? value) {
-    switch (value) {
-      case 'pending':
-        return const Color(0xFFFFA500);
-      case 'confirmed':
-        return const Color(0xFF2196F3);
-      case 'preparing':
-        return const Color(0xFF2196F3);
-      case 'ready':
-        return const Color(0xFF4CD964);
-      case 'picked_up':
-        return const Color(0xFF9C27B0);
-      case 'delivered':
-        return const Color(0xFF4CAF50);
-      case 'cancelled':
-        return AppColors.error;
-      default:
-        return Colors.grey;
-    }
-  }
 }

@@ -83,9 +83,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (error == null) {
       AppToast.showSuccess(
         context: context,
-        message: 'Connexion reussie',
+        message: 'Connexion réussie',
       );
-      Routes.navigateAndRemoveAll(Routes.home);
+      // Navigation vers le RootScaffold (bottom nav 4 tabs).
+      Routes.navigateAndRemoveAll(Routes.root);
     } else {
       AppToast.showError(
         context: context,
@@ -107,7 +108,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         isDarkMode ? AppColors.darkSurface : AppColors.white;
     final Color borderColor = isDarkMode
         ? AppColors.darkTextLight.withValues(alpha: 0.2)
-        : const Color(0xFFEEEEEE);
+        : AppColors.line;
 
     return Scaffold(
       backgroundColor: backgroundColor,
