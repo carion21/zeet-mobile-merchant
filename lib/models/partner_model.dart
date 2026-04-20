@@ -91,26 +91,50 @@ class PartnerData {
 
   factory PartnerData.fromJson(Map<String, dynamic> json) {
     return PartnerData(
-      id: json['id'] as int,
+      id: _asInt(json['id']) ?? 0,
       name: json['name'] as String,
       slug: json['slug'] as String?,
       description: json['description'] as String?,
       status: json['status'] as bool? ?? true,
       picture: json['picture'] as String?,
-      latitude: (json['latitude'] as num?)?.toDouble(),
-      longitude: (json['longitude'] as num?)?.toDouble(),
+      latitude: _asDouble(json['latitude']),
+      longitude: _asDouble(json['longitude']),
       phone: json['phone'] as String?,
       address: json['address'] as String?,
-      minOrderAmount: (json['min_order_amount'] as num?)?.toDouble(),
-      prepTimeMin: json['prep_time_min'] as int?,
-      commissionRate: (json['commission_rate'] as num?)?.toDouble(),
-      partnerType: json['partner_type'] as int?,
+      minOrderAmount: _asDouble(json['min_order_amount']),
+      prepTimeMin: _asInt(json['prep_time_min']),
+      commissionRate: _asDouble(json['commission_rate']),
+      partnerType: _asPartnerTypeId(json['partner_type']),
       openNow: json['open_now'] as bool?,
       schedules: (json['schedules'] as List<dynamic>?)
               ?.map((e) => PartnerSchedule.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
+  }
+
+  static double? _asDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v);
+    return null;
+  }
+
+  static int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  static int? _asPartnerTypeId(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    if (v is Map) return _asInt(v['id']);
+    return null;
   }
 
   Map<String, dynamic> toJson() {

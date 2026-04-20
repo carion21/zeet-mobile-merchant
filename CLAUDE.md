@@ -32,6 +32,29 @@ The app uses **Riverpod** for state management:
 - All providers are in `lib/providers/`
 - Key providers:
   - `themeModeProvider` - Manages light/dark/system theme mode with SharedPreferences persistence
+  - `syncManagerProvider` - Singleton du SyncManager offline-first (boot au premier read).
+  - `partnerDatabaseProvider` - Singleton Drift DB locale (disposed avec ProviderScope).
+  - `cachedOrdersProvider` - Stream reactif des commandes en cache local.
+  - `queuedActionsCountProvider` - Nombre d'actions en attente de sync.
+  - `pendingActionsProvider` - Liste des QueuedAction pour l'écran `SyncPendingScreen`.
+  - `connectivityStatusProvider` - Stream `bool` online/offline via `ZeetConnectivity`.
+
+### Offline-first architecture (Drift + sync queue)
+
+L'app suit le pattern **local-first** (voir skill `zeet-offline-first`) :
+- **Source de vérité locale** : `PartnerDatabase` (Drift SQLite) avec 2 tables : `orders_cache` (snapshot reactif) et `queued_actions` (queue persistante).
+- **Optimistic UI** : toute mutation (confirm / preparing / ready / cancel) passe par `SyncManager.optimisticXxx()` :
+  1. Update Drift local immédiat (UI reagit via stream).
+  2. Enqueue l'action dans `queued_actions`.
+  3. Si online → tentative immédiate, sinon → replay au retour réseau (`connectivity_plus`).
+- **Retry backoff** exponentiel : 1, 2, 4, 8, 16, 32, cap 60s. Dead letter après 10 échecs.
+- **Banner** : `PartnerConnectivityBanner` (lib/core/widgets/) montre offline / synchronisation / compteur queue → tap ouvre `SyncPendingScreen` pour retry manuel.
+- **Conflict resolution** : server-wins par défaut. Les actions 4xx (sauf 408/429) sont markees `failed` + `syncStatus=failed` sur l'ordre, l'UI peut offrir un rollback manuel.
+
+Les commandes sont déjà branchées sur ce pattern. Pour brancher d'autres domaines (produits, wallet, etc.) :
+1. Ajouter un type dans l'enum `QueuedActionType`.
+2. Étendre le switch dans `SyncManager._executeQueuedAction`.
+3. Wrapper les écritures du provider concerné via `SyncManager.optimisticXxx()`.
 
 ### Navigation System
 
@@ -53,13 +76,24 @@ Named routes available: `home`
 ### Project Structure
 
 - **`lib/core/`** - Core utilities and shared components
-  - `constants/` - App-wide constants (colors, sizes, themes, icons, assets, API, texts)
-  - `widgets/` - Reusable widgets (popups, toasts)
+  - `constants/` - App-wide constants (colors, sizes, themes, icons, assets, API, texts, **copy**)
+    - `copy.dart` : **micro-copy canonique** (CTAs, erreurs typées, empty states, etc.).
+      Toujours ajouter les nouveaux libellés ici plutôt qu'en dur dans les widgets.
+  - `widgets/` - Reusable widgets
+    - `partner_connectivity_banner.dart` : bandeau offline/sync (remplace `ConnectivityBanner` brut).
+    - `cancel_reason_sheet.dart` : bottom sheet 2 étapes (motif + swipe-to-confirm).
+    - `notif_rationale_sheet.dart`, `preparation_timer.dart`, `app_popup.dart`, `toastification.dart`.
+
+- **`lib/data/local/`** - Couche de persistance locale (offline-first)
+  - `partner_database.dart` : Drift DB + DAOs (`upsertOrder`, `enqueueAction`, etc.).
+  - `partner_database.g.dart` : code généré par drift_dev (ne pas éditer à la main).
+  - `order_cache_serializer.dart` : encode/decode Order ↔ JSON pour le cache, avec
+    helper `applyOptimisticStatus` pour muter un statut localement.
 
 - **`lib/models/`** - Data models
   - Models for merchant-specific entities (products, orders, categories, etc.)
-  - Each model should have a `copyWith()` method for immutability
-  - Use JSON serialization for API communication
+  - Parsing `fromJson` **défensif** (gère polymorphisme `int | Map | String` sur les champs comme `status`, `customer`, `payment_method`). Ne pas migrer vers `json_serializable` sans revisiter ce comportement.
+  - Each model should have a `copyWith()` method for immutability (à compléter progressivement).
 
 - **`lib/screens/`** - Feature screens
   - Each screen is typically an `index.dart` file
@@ -72,8 +106,20 @@ Named routes available: `home`
   - Examples: menu provider, order provider, merchant profile provider, analytics provider
 
 - **`lib/services/`** - Application services
-  - `navigation_service.dart` - Centralized navigation
-  - Future services: API service, notification service, analytics service
+  - `navigation_service.dart` - Centralized navigation (utilise `ZeetPageRoute` shared axis).
+  - `api_client.dart` - Singleton HTTP (http package) + refresh 401 + `onSessionExpired` global.
+  - `sync_manager.dart` - Offline-first orchestrator (voir section "Offline-first architecture").
+  - `fcm_service.dart` + `local_notification_service.dart` : FCM + 5 channels Android + FullScreenIntent incoming_order + iOS category `zeet.partner.order` avec actions inline Accepter/Refuser.
+  - `order_service`, `product_service`, etc. : services par domaine (un singleton par ressource API).
+
+### Widgets `zeet_ui` critiques utilisés
+
+Le package partagé `packages/zeet_ui/` expose les primitives. À utiliser systématiquement :
+- **États ELOE** : `ZeetStateBuilder<T>` (mapping AsyncValue-like → 5 états) + `ZeetErrorState` (typologie `ZeetErrorKind` : network/server/unauthorized/notFound/parsing/paymentDeclined/generic).
+- **Motion** : `ZeetRollingCounter` (montants animés), `ZeetPulse` (pulse bordure sur événements critiques), `ZeetPageRoute` (transitions shared axis).
+- **POS** : `ZeetSwipeToConfirm` / `ZeetSwipeDanger` (slider "Glisser pour confirmer" avec 3 haptics), `ZeetButton` (scale-on-tap + haptic intégré).
+- **Haptics sémantiques** : `ZeetHaptics.tap()` / `.success()` / `.warning()` / `.error()` / `.heavy()` / `.longPress()`.
+  Toujours les préférer aux appels `HapticFeedback.*` bruts.
 
 - **`lib/data/`** - Data layer (optional)
   - Repository pattern for data access

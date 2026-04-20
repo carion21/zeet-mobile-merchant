@@ -38,6 +38,9 @@ abstract class ProfileEndpoints {
   static const String availability = '/partner/availability';
   static const String uploadLogo = '/partner/profile/logo';
   static const String removeLogo = '/partner/profile/logo';
+  // Override manuel de l'etat ouvert/ferme (PATCH pour set, DELETE pour
+  // revenir au schedule hebdomadaire).
+  static const String openNow = '/partner/open-now';
 }
 
 // ---------------------------------------------------------------------------

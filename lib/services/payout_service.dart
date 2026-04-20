@@ -27,7 +27,7 @@ class PayoutService {
     }
     throw const ApiException(
       statusCode: 500,
-      message: 'Reponse de creation de payout invalide',
+      message: 'Réponse de création de payout invalide',
     );
   }
 

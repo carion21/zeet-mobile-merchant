@@ -705,17 +705,76 @@ class OrderActionsResponse {
 }
 
 /// Reponse de GET /v1/partner/orders/:id/pickup-otp.
+///
+/// Contrat backend (cf. ORDERS_PARTNER_FLOW.md section 3.11) :
+/// ```json
+/// {
+///   "code": "1234",
+///   "status": "pending",
+///   "expires_at": "2026-04-19T15:15:00Z",
+///   "attempt_count": 0,
+///   "max_attempts": 5
+/// }
+/// ```
 class PickupOtpResponse {
+  /// Code OTP a 4 chiffres (peut etre dans `otp`, `code` ou `pickup_otp`
+  /// selon les versions backend).
   final String? otp;
+
+  /// Statut de l'OTP : `pending` (genere, en attente saisie rider),
+  /// `consumed` (rider a saisi avec succes), `expired`, `failed`.
+  final String? status;
+
+  /// Date d'expiration ISO 8601 brute.
   final String? expiresAt;
 
-  const PickupOtpResponse({this.otp, this.expiresAt});
+  /// Nombre de tentatives ratees du rider (>= max_attempts → OTP bloque).
+  final int? attemptCount;
+
+  /// Nombre max de tentatives autorisees (defaut backend : 5).
+  final int? maxAttempts;
+
+  const PickupOtpResponse({
+    this.otp,
+    this.status,
+    this.expiresAt,
+    this.attemptCount,
+    this.maxAttempts,
+  });
 
   factory PickupOtpResponse.fromJson(Map<String, dynamic> json) {
     return PickupOtpResponse(
-      otp: json['otp'] as String? ?? json['pickup_otp'] as String? ?? json['code'] as String?,
+      otp: json['otp'] as String? ??
+          json['pickup_otp'] as String? ??
+          json['code'] as String?,
+      status: json['status'] as String?,
       expiresAt: json['expires_at'] as String?,
+      attemptCount: _asIntOtp(json['attempt_count']),
+      maxAttempts: _asIntOtp(json['max_attempts']),
     );
+  }
+
+  /// DateTime parse de [expiresAt], ou `null` si non parsable.
+  DateTime? get expiresAtDateTime {
+    if (expiresAt == null || expiresAt!.isEmpty) return null;
+    return DateTime.tryParse(expiresAt!)?.toLocal();
+  }
+
+  /// `true` si l'OTP est expire ou consume (plus utilisable).
+  bool get isUsable {
+    final s = status;
+    if (s == 'consumed' || s == 'expired' || s == 'failed') return false;
+    final dt = expiresAtDateTime;
+    if (dt != null && dt.isBefore(DateTime.now())) return false;
+    return otp != null && otp!.isNotEmpty;
+  }
+
+  static int? _asIntOtp(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
   }
 }
 

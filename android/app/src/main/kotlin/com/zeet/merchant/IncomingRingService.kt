@@ -49,10 +49,17 @@ class IncomingRingService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
 
-        const val CHANNEL_ID = "zeet_partner_incoming_ring"
-        const val CHANNEL_NAME = "Nouvelles commandes (sonnerie)"
+        // ALIGNE sur LocalNotificationService.kIncomingOrderChannelId (Dart).
+        // Avant : channel distinct `zeet_partner_incoming_ring` avec
+        // IMPORTANCE_HIGH, ce qui creait un 2e channel Android et degradait
+        // les notifs FSI quand le service natif s'affichait seul (app killed).
+        // Bumper le suffixe ici ET dans LocalNotificationService si on
+        // change le son ou l'importance — Android refuse de modifier
+        // un channel apres creation.
+        const val CHANNEL_ID = "zeet_partner_incoming_order_v3"
+        const val CHANNEL_NAME = "Nouvelles commandes"
         const val CHANNEL_DESC =
-            "Sonnerie forte et permanente pour les nouvelles commandes entrantes."
+            "Alertes prioritaires avec sonnerie distincte pour les nouvelles commandes entrantes."
 
         const val NOTIFICATION_ID = 1010
     }
@@ -225,7 +232,10 @@ class IncomingRingService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_HIGH,
+            // IMPORTANCE_MAX : perce le mode Focus / Ne Pas Deranger et
+            // reveille l'ecran via FullScreenIntent. Indispensable pour
+            // une tablette de caisse cuisine en veille.
+            NotificationManager.IMPORTANCE_MAX,
         ).apply {
             description = CHANNEL_DESC
             enableVibration(true)

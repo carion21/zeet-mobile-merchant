@@ -31,6 +31,7 @@ import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/screens/incoming_order/widgets/slide_to_accept.dart';
 import 'package:merchant/services/incoming_ring_bridge.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class IncomingOrderScreen extends ConsumerStatefulWidget {
   const IncomingOrderScreen({super.key});
@@ -88,6 +89,12 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
     final payload = ref.read(incomingOrderProvider).payload;
     final title = payload?.title ?? 'Nouvelle commande';
     final body = payload?.body ?? '';
+
+    // ACK "vu" — Phase 2 gap #1. Stoppe la cascade backend (WS → FCM
+    // retries → SMS → Telegram admin) des que l'ecran est affiche, sans
+    // attendre l'accept ou le reject. Idempotent + non-bloquant.
+    // ignore: unawaited_futures
+    ref.read(incomingOrderProvider.notifier).ackOnView();
 
     // Preferred path : service natif (loop + MediaPlayer custom).
     await IncomingRingBridge.startFake(title: title, body: body);
@@ -200,15 +207,44 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
     final state = ref.watch(incomingOrderProvider);
     _listenForAutoClose(state);
 
-    // Si aucun payload (ex: deep link direct), on ferme.
+    // Si aucun payload (ex: deep link direct, cold start apres bug FCM),
+    // on ne ferme plus automatiquement — on affiche un ZeetErrorState
+    // "Donnees incompletes" avec un CTA retour explicite, conforme ELOE.
+    // Fermer silencieusement laissait l'utilisateur avec l'ecran
+    // precedent sans explication.
     final payload = state.payload;
     if (payload == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Routes.goBack();
-      });
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: _bg,
-        body: SizedBox.shrink(),
+        body: SafeArea(
+          child: Theme(
+            // Theme clair sur fond orange — ZeetErrorState utilise
+            // onSurfaceVariant pour les icones + texte. On force un
+            // ColorScheme blanc pour rester lisible.
+            data: ThemeData(
+              colorScheme: const ColorScheme.light(
+                primary: _ink,
+                onPrimary: _bg,
+                surface: _bg,
+                onSurface: _ink,
+                onSurfaceVariant: Colors.white70,
+              ),
+              textTheme: Theme.of(context).textTheme.apply(
+                    bodyColor: _ink,
+                    displayColor: _ink,
+                  ),
+            ),
+            child: ZeetErrorState(
+              kind: ZeetErrorKind.parsing,
+              title: 'Données incomplètes',
+              description:
+                  "On n'a pas pu afficher cette commande. Elle est peut-être "
+                  'déjà dans votre liste. Revenez à l\'écran précédent.',
+              retryLabel: 'Retour',
+              onRetry: () => Routes.goBack(),
+            ),
+          ),
+        ),
       );
     }
 
@@ -468,10 +504,10 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
   // ---------------------------------------------------------------------------
 
   Widget _buildActions(IncomingOrderState state) {
-    final busy = state.isBusy;
+    final bool busy = state.isBusy;
 
     return Column(
-      children: [
+      children: <Widget>[
         SlideToAcceptButton(
           key: ValueKey(state.payload?.orderId ?? 0),
           label: busy ? 'CONFIRMATION...' : 'GLISSER POUR ACCEPTER',
@@ -481,23 +517,14 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
           },
         ),
         SizedBox(height: 14.h),
-        TextButton(
-          onPressed: busy ? null : _showRejectDialog,
-          style: TextButton.styleFrom(
-            foregroundColor: _ink,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-            minimumSize: Size(120.w, 48.h),
-          ),
-          child: Text(
-            'Refuser la commande',
-            style: TextStyle(
-              color: _ink.withValues(alpha: 0.85),
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w600,
-              decoration: TextDecoration.underline,
-              decorationColor: _ink.withValues(alpha: 0.5),
-            ),
-          ),
+        // Refuser — ghost POS sur fond orange fixe (hors theme).
+        // Hit target 56pt (skill zeet-pos-ergonomics §2.1), scale-on-press,
+        // border blanc subtile pour glanceability sous stress / lumiere,
+        // haptic warning (action destructive volontaire).
+        _RejectGhostButton(
+          enabled: !busy,
+          onPressed: _showRejectDialog,
+          foreground: _ink,
         ),
       ],
     );
@@ -524,6 +551,96 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
         await _startRinging();
       }
     }
+  }
+}
+
+/// Bouton ghost custom adapte a l'ecran incoming_order (fond orange fixe,
+/// hors theme). Remplace un `TextButton` underline sous-dimensionne :
+/// - hit target 56pt (skill zeet-pos-ergonomics §2.1)
+/// - scale-on-press + haptic warning (action destructive volontaire)
+/// - border blanc subtile + fg blanc plein : glanceable sous stress/gants
+/// - `Semantics(button: true)` explicite + `reduceMotion` respecte
+class _RejectGhostButton extends StatefulWidget {
+  const _RejectGhostButton({
+    required this.enabled,
+    required this.onPressed,
+    required this.foreground,
+  });
+
+  final bool enabled;
+  final Future<void> Function() onPressed;
+  final Color foreground;
+
+  @override
+  State<_RejectGhostButton> createState() => _RejectGhostButtonState();
+}
+
+class _RejectGhostButtonState extends State<_RejectGhostButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool v) {
+    if (_pressed == v) return;
+    setState(() => _pressed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool reduceMotion = MediaQuery.of(context).disableAnimations;
+    final Color fg = widget.foreground;
+    final bool enabled = widget.enabled;
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: 'Refuser la commande',
+      child: ExcludeSemantics(
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: reduceMotion ? Duration.zero : ZeetMotion.xs,
+          curve: ZeetCurves.standard,
+          child: Material(
+            color: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(ZeetRadius.md),
+              side: BorderSide(
+                color: fg.withValues(alpha: enabled ? 0.45 : 0.2),
+                width: 1.2,
+              ),
+            ),
+            child: InkWell(
+              onTapDown: enabled ? (_) => _setPressed(true) : null,
+              onTapUp: enabled ? (_) => _setPressed(false) : null,
+              onTapCancel: enabled ? () => _setPressed(false) : null,
+              onTap: enabled
+                  ? () {
+                      ZeetHaptics.warning();
+                      widget.onPressed();
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(ZeetRadius.md),
+              splashColor: fg.withValues(alpha: 0.10),
+              highlightColor: fg.withValues(alpha: 0.06),
+              child: Container(
+                height: 56,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ZeetSpacing.x5,
+                ),
+                child: Text(
+                  'Refuser la commande',
+                  style: TextStyle(
+                    color: fg.withValues(alpha: enabled ? 1.0 : 0.5),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:merchant/core/constants/api.dart';
 import 'package:merchant/models/notification_model.dart';
 import 'package:merchant/services/api_client.dart';
@@ -78,6 +79,30 @@ class NotificationService {
   /// pour les notifications de nouvelles commandes cote partner).
   Future<void> acknowledge(int id) async {
     await _apiClient.post(NotificationEndpoints.acknowledge(id.toString()));
+  }
+
+  /// Variante "fire-and-forget" de [acknowledge] : capture toutes les
+  /// erreurs et retourne `false` au lieu de relancer.
+  ///
+  /// A utiliser dans les flows ou l'ACK est un effet de bord souhaite mais
+  /// non bloquant : ouverture de l'ecran incoming order, ouverture du detail
+  /// depuis une notif tap, etc. Le but est de **stopper la cascade backend**
+  /// (WS → FCM retry → SMS → Telegram admin) des que l'app a vu la commande,
+  /// independamment de l'action ulterieure (accept/reject).
+  ///
+  /// Idempotent cote backend : un second ACK sur la meme notification
+  /// renvoie 200 (ou 404 / 409 selon implementation, swallowes ici).
+  Future<bool> acknowledgeSilent(int id) async {
+    if (id <= 0) return false;
+    try {
+      await _apiClient.post(NotificationEndpoints.acknowledge(id.toString()));
+      return true;
+    } catch (e) {
+      // Echec non fatal : la cascade continue mais l'utilisateur a quand
+      // meme l'ecran ouvert — pire cas, il recoit un FCM dupliquee.
+      debugPrint('[NotificationService] acknowledgeSilent($id) failed: $e');
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------

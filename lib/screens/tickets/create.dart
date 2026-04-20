@@ -33,6 +33,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   TicketPriority _priority = TicketPriority.normal;
   bool _isSubmitting = false;
+  String? _lastError;
 
   @override
   void dispose() {
@@ -46,7 +47,10 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       await HapticFeedback.lightImpact();
       return;
     }
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _lastError = null;
+    });
     await HapticFeedback.mediumImpact();
 
     final CreateTicketRequest request = CreateTicketRequest(
@@ -62,9 +66,9 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
         .createTicket(request);
 
     if (!mounted) return;
-    setState(() => _isSubmitting = false);
 
     if (created != null) {
+      setState(() => _isSubmitting = false);
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(
         context: context,
@@ -73,12 +77,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
       Routes.pushReplacement(TicketDetailScreen(ticketId: created.id.toString()));
     } else {
       final String? err = ref.read(ticketsListProvider).errorMessage;
-      if (mounted) {
-        AppToast.showError(
-          context: context,
-          message: err ?? 'Impossible de creer le ticket',
-        );
-      }
+      setState(() {
+        _isSubmitting = false;
+        _lastError = err ?? 'Impossible de creer le ticket';
+      });
+      AppToast.showError(
+        context: context,
+        message: err ?? 'Impossible de creer le ticket',
+      );
     }
   }
 
@@ -180,6 +186,16 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
               maxLines: 6,
               minLines: 4,
             ),
+            // Erreur API inline — persiste apres la disparition du toast
+            // pour que l'utilisateur comprenne pourquoi le submit a echoue.
+            if (_lastError != null) ...<Widget>[
+              const SizedBox(height: ZeetSpacing.x4),
+              ZeetErrorState.fromError(
+                _lastError,
+                compact: true,
+                onRetry: _isSubmitting ? null : _submit,
+              ),
+            ],
             const SizedBox(height: ZeetSpacing.x6),
           ],
         ),

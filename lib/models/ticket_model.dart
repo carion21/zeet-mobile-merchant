@@ -47,11 +47,11 @@ extension TicketStatusX on TicketStatus {
       case TicketStatus.awaitingReply:
         return 'En attente';
       case TicketStatus.resolved:
-        return 'Resolu';
+        return 'Résolu';
       case TicketStatus.closed:
-        return 'Ferme';
+        return 'Fermé';
       case TicketStatus.rejected:
-        return 'Rejete';
+        return 'Rejeté';
       case TicketStatus.unknown:
         return 'Inconnu';
     }

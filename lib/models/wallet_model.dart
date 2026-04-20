@@ -82,7 +82,7 @@ class WalletEntry {
       balanceBefore: _asNullableDouble(json['balance_before']),
       balanceAfter: _asNullableDouble(json['balance_after']),
       description:
-          json['reason'] as String? ?? json['description'] as String?,
+          json['label'] as String? ?? json['description'] as String?,
       reference: json['code'] as String? ?? json['reference'] as String?,
       type: json['actor_type'] as String? ?? json['type'] as String?,
       status: json['status'] as String?,

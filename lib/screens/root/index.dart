@@ -18,7 +18,6 @@
 // [rootTabProvider] pour éviter tout couplage via GlobalKey.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -73,7 +72,7 @@ class RootScaffold extends ConsumerWidget {
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           indicatorColor: scheme.primary.withValues(alpha: 0.12),
           onDestinationSelected: (int i) {
-            HapticFeedback.selectionClick();
+            ZeetHaptics.tap();
             ref.read(rootTabProvider.notifier).state = i;
           },
           destinations: const <NavigationDestination>[

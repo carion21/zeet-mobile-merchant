@@ -14,15 +14,24 @@
          accordee manuellement a l'install assistee. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Permet de demander a l'utilisateur d'exclure ZEET du battery optimizer
+         (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). Sans ca, le prompt natif reste
+         silencieux et permission_handler log "No permissions found in manifest". -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Phase 4 : ForegroundService natif pour la sonnerie en boucle
          (IncomingRingService) meme quand l'app est killed. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
+    <!-- Phase 5 : bulle flottante "chat-head" par-dessus les autres apps.
+         Accordee manuellement par l'utilisateur via le panneau Systeme
+         (Display over other apps). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:label="Zeet Partner"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:extractNativeLibs="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -46,7 +55,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Deep link pour relancer l'app depuis la bulle flottante.
+                 zeetpartner://open ramene simplement l'app au premier plan. -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="zeetpartner"/>
+            </intent-filter>
         </activity>
+
+        <!-- Phase 5 : service de la bulle flottante (flutter_overlay_window). -->
+        <service
+            android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

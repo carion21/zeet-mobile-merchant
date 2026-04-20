@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 import 'package:merchant/models/ticket_model.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/ticket_provider.dart';
 import 'package:merchant/screens/tickets/create.dart';
 import 'package:merchant/screens/tickets/detail.dart';
@@ -97,7 +98,14 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               ),
               child: _FilterSegmented(current: state.filter),
             ),
-            Expanded(child: _TicketsList(state: state, scroll: _scrollController)),
+            Expanded(
+              child: _TicketsList(
+                state: state,
+                scroll: _scrollController,
+                onRetry: () => ref.read(ticketsListProvider.notifier).load(),
+                onCreateTicket: _openCreate,
+              ),
+            ),
           ],
         ),
       ),
@@ -171,15 +179,43 @@ class _FilterSegmented extends ConsumerWidget {
 // LISTE
 // =============================================================================
 
-class _TicketsList extends StatelessWidget {
-  const _TicketsList({required this.state, required this.scroll});
+class _TicketsList extends ConsumerWidget {
+  const _TicketsList({
+    required this.state,
+    required this.scroll,
+    required this.onRetry,
+    required this.onCreateTicket,
+  });
   final TicketsListState state;
   final ScrollController scroll;
+  final VoidCallback onRetry;
+  final VoidCallback onCreateTicket;
 
   @override
-  Widget build(BuildContext context) {
-    if (state.status == TicketsStatus.loading && state.tickets.isEmpty) {
-      return ListView.builder(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool isOffline = ref.watch(connectivityStatusProvider).maybeWhen(
+          data: (bool v) => !v,
+          orElse: () => false,
+        );
+
+    // La donnee "valide" pour le contenu = liste filtree non vide.
+    // On wrappe la liste complete, le flag isEmpty est porte par la
+    // longueur filtree (permet d'afficher un empty distinct quand le
+    // backend renvoie 0 tickets vs quand le filtre masque tout).
+    final List<Ticket> filtered = state.filteredTickets;
+    final bool hasAny = state.tickets.isNotEmpty;
+    final bool isLoading = state.status == TicketsStatus.loading && !hasAny;
+    final Object? error = state.status == TicketsStatus.error && !hasAny
+        ? (state.errorMessage ?? 'Impossible de charger les tickets')
+        : null;
+
+    return ZeetStateBuilder<List<Ticket>>(
+      data: hasAny ? state.tickets : null,
+      isLoading: isLoading,
+      error: error,
+      isOffline: isOffline && !hasAny,
+      onRetry: onRetry,
+      loading: ListView.builder(
         padding: const EdgeInsets.symmetric(
           horizontal: ZeetSpacing.x4,
           vertical: ZeetSpacing.x2,
@@ -189,64 +225,65 @@ class _TicketsList extends StatelessWidget {
           padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x1),
           child: ZeetSkeleton(width: double.infinity, height: 72),
         ),
-      );
-    }
-
-    if (state.status == TicketsStatus.error && state.tickets.isEmpty) {
-      return ListView(
+      ),
+      emptyBuilder: () => ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: <Widget>[
           SizedBox(
             height: MediaQuery.of(context).size.height * 0.55,
             child: ZeetEmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'Chargement impossible',
-              description: state.errorMessage ??
-                  'Une erreur est survenue lors du chargement des tickets.',
-            ),
-          ),
-        ],
-      );
-    }
-
-    final List<Ticket> filtered = state.filteredTickets;
-    if (filtered.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: <Widget>[
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.55,
-            child: const ZeetEmptyState(
               icon: Icons.support_agent_rounded,
-              title: 'Aucun ticket a afficher',
+              title: 'Aucun ticket — tout va bien',
               description:
-                  'Ouvrez un ticket pour poser une question à notre '
-                  'équipe support. Réponse sous 24h.',
+                  "Vous n'avez pas de ticket en cours. Ouvrez-en un si "
+                  'vous avez une question. Réponse sous 24h.',
+              actionLabel: 'Ouvrir un ticket',
+              onAction: onCreateTicket,
             ),
           ),
         ],
-      );
-    }
-
-    return ListView.separated(
-      controller: scroll,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        ZeetSpacing.x4,
-        ZeetSpacing.x1,
-        ZeetSpacing.x4,
-        ZeetSpacing.x4,
       ),
-      itemCount: filtered.length + (state.isLoadingMore ? 1 : 0),
-      separatorBuilder: (_, __) => const SizedBox(height: ZeetSpacing.x2),
-      itemBuilder: (BuildContext context, int index) {
-        if (index >= filtered.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x3),
-            child: Center(child: CircularProgressIndicator()),
+      builder: (List<Ticket> _) {
+        // La liste chargee peut etre vide apres filtre client-side : on
+        // affiche alors un empty dedie, sans perdre le chip de filtres.
+        if (filtered.isEmpty) {
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: <Widget>[
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.55,
+                child: const ZeetEmptyState(
+                  icon: Icons.filter_list_off_rounded,
+                  title: 'Aucun ticket dans ce filtre',
+                  description:
+                      'Changez de filtre en haut ou revenez sur "Tous" pour '
+                      'voir vos tickets.',
+                ),
+              ),
+            ],
           );
         }
-        return _TicketTile(ticket: filtered[index]);
+        return ListView.separated(
+          controller: scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(
+            ZeetSpacing.x4,
+            ZeetSpacing.x1,
+            ZeetSpacing.x4,
+            ZeetSpacing.x4,
+          ),
+          itemCount: filtered.length + (state.isLoadingMore ? 1 : 0),
+          separatorBuilder: (_, __) => const SizedBox(height: ZeetSpacing.x2),
+          itemBuilder: (BuildContext context, int index) {
+            if (index >= filtered.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x3),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return _TicketTile(ticket: filtered[index]);
+          },
+        );
       },
     );
   }

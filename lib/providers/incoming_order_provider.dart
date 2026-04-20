@@ -44,10 +44,16 @@ class IncomingOrderState {
   /// Dernier message d'erreur utilisateur (affiche inline sur l'ecran).
   final String? errorMessage;
 
+  /// Indique que l'ACK "vu" (POST /notifications/:id/ack) a deja ete envoye
+  /// pour ce payload. Empeche les doubles appels au cas ou l'ecran rebuild
+  /// (rotation, hot-reload, focus change). La valeur est reset par [show].
+  final bool ackSent;
+
   const IncomingOrderState({
     this.phase = IncomingOrderPhase.idle,
     this.payload,
     this.errorMessage,
+    this.ackSent = false,
   });
 
   bool get isActive =>
@@ -63,6 +69,7 @@ class IncomingOrderState {
     IncomingOrderPhase? phase,
     IncomingOrderPayload? payload,
     String? errorMessage,
+    bool? ackSent,
     bool clearError = false,
     bool clearPayload = false,
   }) {
@@ -70,6 +77,7 @@ class IncomingOrderState {
       phase: phase ?? this.phase,
       payload: clearPayload ? null : (payload ?? this.payload),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      ackSent: ackSent ?? this.ackSent,
     );
   }
 }
@@ -103,7 +111,44 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
     state = IncomingOrderState(
       phase: IncomingOrderPhase.ringing,
       payload: payload,
+      // ackSent reset a false : pour la nouvelle commande on re-fera l'ACK
+      // au moment de l'affichage de l'ecran (cf. ackOnView).
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ACK on view — Phase 2 gap #1
+  // ---------------------------------------------------------------------------
+  /// Envoie l'ACK "vu" au backend des que l'ecran incoming order est affiche
+  /// (avant meme l'accept ou le reject). But : stopper la cascade complete
+  /// du backend (WS realtime → FCM retries → SMS → Telegram admin) qui
+  /// continue de pousser tant que l'app n'a pas confirme avoir vu la
+  /// commande.
+  ///
+  /// Idempotent : un seul appel par payload (flag `ackSent`). Non-bloquant :
+  /// les erreurs sont swallowes — pire cas, le partner recoit un FCM
+  /// dupliquee mais l'UI continue de fonctionner.
+  ///
+  /// Cf. ORDERS_PARTNER_FLOW.md section 9 "Acquittement" et section 10
+  /// "Historique des correctifs backend / cascade incoming order".
+  Future<void> ackOnView() async {
+    final payload = state.payload;
+    if (payload == null) return;
+    if (!payload.requiresAck) return;
+    if (payload.notificationId <= 0) return;
+    if (state.ackSent) return;
+
+    // Marque immediatement comme envoyee pour eviter doubles appels
+    // concurrents (ex: rebuild de l'ecran pendant que la requete est in-flight).
+    state = state.copyWith(ackSent: true);
+    final ok = await _notificationService.acknowledgeSilent(payload.notificationId);
+    if (!ok) {
+      // Sur echec on reset le flag pour permettre un nouvel essai a la
+      // prochaine occasion (accept/reject re-tentera de toute facon).
+      state = state.copyWith(ackSent: false);
+    } else {
+      debugPrint('[IncomingOrder] view-ack sent for notif ${payload.notificationId}');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -129,15 +174,13 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
         estimatedMinutes: kDefaultPrepMinutes,
       );
 
-      // Ack la notification pour couper la cascade cote backend.
-      if (payload.requiresAck && payload.notificationId > 0) {
-        try {
-          await _notificationService.acknowledge(payload.notificationId);
-        } catch (e) {
-          // L'ack a echoue mais la commande est confirmee : on ne bloque pas
-          // le flow utilisateur. Le backend retentera son mieux.
-          debugPrint('[IncomingOrder] ack failed (non-fatal): $e');
-        }
+      // Ack la notification pour couper la cascade cote backend (si pas
+      // deja fait par ackOnView). Idempotent cote backend : un second ACK
+      // sur la meme notification renvoie 200/404/409, swallowes ici.
+      if (payload.requiresAck &&
+          payload.notificationId > 0 &&
+          !state.ackSent) {
+        await _notificationService.acknowledgeSilent(payload.notificationId);
       }
 
       state = state.copyWith(phase: IncomingOrderPhase.accepted);
@@ -190,12 +233,11 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
         cancelReason: trimmed,
       );
 
-      if (payload.requiresAck && payload.notificationId > 0) {
-        try {
-          await _notificationService.acknowledge(payload.notificationId);
-        } catch (e) {
-          debugPrint('[IncomingOrder] ack failed (non-fatal): $e');
-        }
+      // Idempotent : ne re-tente l'ACK que si pas deja envoye par ackOnView.
+      if (payload.requiresAck &&
+          payload.notificationId > 0 &&
+          !state.ackSent) {
+        await _notificationService.acknowledgeSilent(payload.notificationId);
       }
 
       state = state.copyWith(phase: IncomingOrderPhase.rejected);

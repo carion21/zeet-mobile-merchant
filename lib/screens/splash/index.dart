@@ -1,4 +1,5 @@
 // lib/screens/splash/index.dart
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:merchant/services/permissions_service.dart';
+import 'package:merchant/services/token_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -25,11 +28,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   void initState() {
     super.initState();
 
-    // Animation du liquide — 1200ms (M-13). Le splash partner n'est
-    // pas un showcase : un restaurateur en coup de feu doit accéder
-    // aux commandes le plus vite possible.
+    // Animation du liquide — 800ms. Le splash partner n'est pas un
+    // showcase : un restaurateur en coup de feu doit accéder aux
+    // commandes le plus vite possible. Budget perf : splash < 60% du
+    // cold-start (cf. zeet-performance-budget §9).
     _liquidController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 800),
       vsync: this,
     );
 
@@ -62,7 +66,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   /// Vérifie l'état d'authentification en parallèle de l'animation.
-  /// Attend au minimum 1200ms (durée de l'animation) — suffisant pour
+  /// Attend au minimum 800ms (durée de l'animation) — suffisant pour
   /// la reconnaissance de marque, pas plus. Un partner qui démarre
   /// son app en plein service ne doit pas attendre 3s.
   ///
@@ -71,16 +75,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   Future<void> _checkAuthAndNavigate() async {
     final Stopwatch stopwatch = Stopwatch()..start();
 
-    try {
-      await ref.read(authProvider.notifier).checkAuthStatus();
-    } catch (e) {
-      debugPrint('[Splash] checkAuthStatus failed: $e');
-    }
+    // S'assurer que TokenService est initialise (idempotent).
+    await TokenService.instance.init();
+
+    // Source de verite PRIMAIRE : les tokens locaux. Si presents, le partner
+    // est authentifie optimiste — on laisse l'app ouvrir le root, et les
+    // appels API echoueront proprement (401 -> refresh -> login) si les
+    // tokens ne sont plus valides cote serveur. Eviter de dependre du state
+    // du notifier qui peut etre mute par `_refreshMeInBackground`.
+    final bool hasTokens = await TokenService.instance.hasTokens();
+
+    // Booter le auth provider en parallele (pour hydrater le partner).
+    // On n'await PAS son resultat pour la decision de routage : les tokens
+    // locaux sont la source de verite.
+    unawaited(ref.read(authProvider.notifier).checkAuthStatus());
 
     stopwatch.stop();
 
     final int elapsed = stopwatch.elapsedMilliseconds;
-    const int minSplashDuration = 1200;
+    const int minSplashDuration = 800;
     if (elapsed < minSplashDuration) {
       await Future<void>.delayed(
         Duration(milliseconds: minSplashDuration - elapsed),
@@ -89,9 +102,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     if (!mounted) return;
 
-    final authState = ref.read(authProvider);
-    if (authState.status == AuthStatus.authenticated) {
-      Routes.navigateAndRemoveAll(Routes.root);
+    if (hasTokens) {
+      // Gate permissions : si jamais onboardees, passer par l'ecran dedie
+      // AVANT d'atterrir sur le root.
+      final bool onboarded =
+          await PermissionsService.instance.isOnboarded();
+      if (!mounted) return;
+      if (onboarded) {
+        Routes.navigateAndRemoveAll(Routes.root);
+      } else {
+        Routes.navigateAndRemoveAll(Routes.permissions);
+      }
     } else {
       Routes.navigateAndRemoveAll(Routes.login);
     }

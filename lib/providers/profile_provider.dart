@@ -4,6 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/models/partner_model.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/profile_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Cle SharedPreferences qui memorise si un override manuel `open_now` est
+/// actuellement actif. Le backend ne renvoie pas (encore) ce flag dans le
+/// profil — on le tracke localement pour pouvoir afficher la pastille
+/// "Override" et proposer un retour au schedule hebdomadaire.
+const String kOpenNowOverrideActiveKey = 'partner.open_now.override_active';
 
 // ---------------------------------------------------------------------------
 // State
@@ -18,12 +25,21 @@ class ProfileState {
   final String? errorMessage;
   final bool isUpdating;
 
+  /// Indique qu'un override manuel `open_now` est actuellement actif
+  /// (le partner a force ouvert/ferme via le toggle home, l'etat affiche
+  /// ne provient pas du schedule hebdomadaire).
+  ///
+  /// Tracke cote client (SharedPreferences) puisque le backend n'expose
+  /// pas (encore) ce flag dans le profil. Reset lors du clearOpenNow.
+  final bool openNowOverrideActive;
+
   const ProfileState({
     this.status = ProfileStatus.initial,
     this.profile,
     this.commissionRate,
     this.errorMessage,
     this.isUpdating = false,
+    this.openNowOverrideActive = false,
   });
 
   ProfileState copyWith({
@@ -32,6 +48,7 @@ class ProfileState {
     double? commissionRate,
     String? errorMessage,
     bool? isUpdating,
+    bool? openNowOverrideActive,
   }) {
     return ProfileState(
       status: status ?? this.status,
@@ -39,6 +56,8 @@ class ProfileState {
       commissionRate: commissionRate ?? this.commissionRate,
       errorMessage: errorMessage,
       isUpdating: isUpdating ?? this.isUpdating,
+      openNowOverrideActive:
+          openNowOverrideActive ?? this.openNowOverrideActive,
     );
   }
 }
@@ -52,7 +71,34 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
 
   ProfileNotifier({ProfileService? profileService})
       : _profileService = profileService ?? ProfileService(),
-        super(const ProfileState());
+        super(const ProfileState()) {
+    _restoreOpenNowOverrideFlag();
+  }
+
+  /// Restaure le flag `openNowOverrideActive` depuis SharedPreferences au
+  /// boot (idempotent, fire-and-forget). Permet de retrouver l'etat
+  /// "Override actif" apres un kill/restart de l'app sans devoir
+  /// re-toggler.
+  Future<void> _restoreOpenNowOverrideFlag() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final active = prefs.getBool(kOpenNowOverrideActiveKey) ?? false;
+      if (active) {
+        state = state.copyWith(openNowOverrideActive: true);
+      }
+    } catch (e) {
+      debugPrint('[ProfileProvider] restore override flag failed: $e');
+    }
+  }
+
+  Future<void> _persistOverrideFlag(bool active) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(kOpenNowOverrideActiveKey, active);
+    } catch (e) {
+      debugPrint('[ProfileProvider] persist override flag failed: $e');
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // GET /v1/partner/profile
@@ -216,6 +262,85 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   // ---------------------------------------------------------------------------
+  // PATCH /v1/partner/open-now — force l'etat ouvert/ferme
+  // ---------------------------------------------------------------------------
+  /// Bascule manuellement l'etat ouvert/ferme du restaurant.
+  ///
+  /// [isOpen] : true = force ouvert, false = force ferme.
+  /// [reason] : raison (defaut `manual`).
+  /// Update optimiste : on met a jour `profile.openNow` des que la requete
+  /// reussit. Retourne un message d'erreur ou null si succes.
+  Future<String?> toggleOpenNow(
+    bool isOpen, {
+    String reason = 'manual',
+    String? reopenAt,
+  }) async {
+    state = state.copyWith(isUpdating: true);
+    try {
+      await _profileService.setOpenNow(
+        isOpen: isOpen,
+        reason: reason,
+        reopenAt: reopenAt,
+      );
+      // Persiste le flag override pour survivre a un restart de l'app.
+      await _persistOverrideFlag(true);
+      if (state.profile != null) {
+        state = state.copyWith(
+          profile: state.profile!.copyWith(openNow: isOpen),
+          isUpdating: false,
+          openNowOverrideActive: true,
+        );
+      } else {
+        state = state.copyWith(
+          isUpdating: false,
+          openNowOverrideActive: true,
+        );
+      }
+      return null;
+    } on ApiException catch (e) {
+      state = state.copyWith(isUpdating: false);
+      // Mapping copy-friendly des erreurs typiques (cf. zeet-micro-copy §4).
+      if (e.statusCode == 403) {
+        return 'Compte suspendu. Contactez le support pour rouvrir.';
+      }
+      return e.message;
+    } catch (e) {
+      state = state.copyWith(isUpdating: false);
+      return 'Impossible de modifier l\'etat du restaurant.';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // DELETE /v1/partner/open-now — retour au schedule hebdomadaire
+  // ---------------------------------------------------------------------------
+  /// Efface l'override manuel et recharge le profil pour recuperer l'etat
+  /// calcule depuis le schedule. Retourne un message d'erreur ou null.
+  Future<String?> clearOpenNowOverride() async {
+    state = state.copyWith(isUpdating: true);
+    try {
+      await _profileService.clearOpenNow();
+      await _persistOverrideFlag(false);
+      // Recharge le profil pour recuperer l'etat calcule depuis le schedule.
+      final updated = await _profileService.getProfile();
+      state = state.copyWith(
+        profile: updated,
+        isUpdating: false,
+        openNowOverrideActive: false,
+      );
+      return null;
+    } on ApiException catch (e) {
+      state = state.copyWith(isUpdating: false);
+      if (e.statusCode == 403) {
+        return 'Compte suspendu. Contactez le support pour rouvrir.';
+      }
+      return e.message;
+    } catch (e) {
+      state = state.copyWith(isUpdating: false);
+      return 'Impossible de revenir aux horaires.';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Chargement complet
   // ---------------------------------------------------------------------------
   /// Charge le profil et le taux de commission en parallele.
@@ -266,4 +391,10 @@ final partnerDataProvider = Provider<PartnerData?>((ref) {
 /// Provider pratique pour le taux de commission.
 final commissionRateProvider = Provider<double?>((ref) {
   return ref.watch(profileProvider).commissionRate;
+});
+
+/// Indique si un override manuel `open_now` est actif (pastille "Override"
+/// affichee par le HomeHeader). Reset par `clearOpenNowOverride()`.
+final openNowOverrideActiveProvider = Provider<bool>((ref) {
+  return ref.watch(profileProvider).openNowOverrideActive;
 });

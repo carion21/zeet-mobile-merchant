@@ -66,7 +66,8 @@ class AppToast {
       style: ToastificationStyle.minimal,
       alignment: Alignment.topCenter,
       autoCloseDuration: duration,
-      animationDuration: const Duration(milliseconds: 400),
+      // Seuil POS : 200ms max pour ne pas ralentir la perception (zeet-pos-ergonomics).
+      animationDuration: const Duration(milliseconds: 200),
       animationBuilder: (context, animation, alignment, child) {
         return FadeTransition(
           opacity: animation,

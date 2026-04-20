@@ -19,6 +19,7 @@ import 'package:zeet_ui/zeet_ui.dart';
 
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/ticket_model.dart';
+import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/ticket_provider.dart';
 
 class TicketDetailScreen extends ConsumerStatefulWidget {
@@ -145,6 +146,9 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
               child: _MessagesList(
                 state: state,
                 scroll: _scrollController,
+                onRetry: () => ref
+                    .read(ticketDetailProvider(widget.ticketId).notifier)
+                    .load(),
               ),
             ),
           ),
@@ -320,76 +324,76 @@ class _AvailableActionsBar extends ConsumerWidget {
 // MESSAGES LIST
 // =============================================================================
 
-class _MessagesList extends StatelessWidget {
-  const _MessagesList({required this.state, required this.scroll});
+class _MessagesList extends ConsumerWidget {
+  const _MessagesList({
+    required this.state,
+    required this.scroll,
+    required this.onRetry,
+  });
   final TicketDetailState state;
   final ScrollController scroll;
+  final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) {
-    if (state.status == TicketsStatus.loading && state.messages.isEmpty) {
-      return ListView.builder(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool isOffline = ref.watch(connectivityStatusProvider).maybeWhen(
+          data: (bool v) => !v,
+          orElse: () => false,
+        );
+    final bool hasMessages = state.messages.isNotEmpty;
+    final bool isLoading =
+        state.status == TicketsStatus.loading && !hasMessages;
+    final Object? error = state.status == TicketsStatus.error && !hasMessages
+        ? (state.errorMessage ?? 'Impossible de charger les messages')
+        : null;
+
+    return ZeetStateBuilder<List<TicketMessage>>(
+      data: hasMessages ? state.messages : null,
+      isLoading: isLoading,
+      error: error,
+      isOffline: isOffline && !hasMessages,
+      onRetry: onRetry,
+      loading: ListView.builder(
         padding: const EdgeInsets.all(ZeetSpacing.x4),
         itemCount: 4,
         itemBuilder: (BuildContext context, int _) => const Padding(
           padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x2),
           child: ZeetSkeleton(width: double.infinity, height: 56),
         ),
-      );
-    }
-
-    if (state.status == TicketsStatus.error && state.messages.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: <Widget>[
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.45,
-            child: ZeetEmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'Chargement impossible',
-              description: state.errorMessage ??
-                  'Impossible de charger les messages.',
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (state.messages.isEmpty) {
-      return ListView(
+      ),
+      emptyBuilder: () => ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: <Widget>[
           SizedBox(
             height: MediaQuery.of(context).size.height * 0.45,
             child: const ZeetEmptyState(
               icon: Icons.chat_bubble_outline_rounded,
-              title: 'Conversation vierge',
+              title: 'Aucune réponse pour l\'instant',
               description:
-                  'Envoyez un message ci-dessous pour demarrer la conversation '
-                  'avec le support.',
+                  'Envoyez un message ci-dessous pour démarrer la conversation '
+                  'avec notre équipe support.',
             ),
           ),
         ],
-      );
-    }
-
-    return ListView.builder(
-      controller: scroll,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(ZeetSpacing.x4),
-      itemCount: state.messages.length,
-      itemBuilder: (BuildContext context, int index) {
-        final TicketMessage msg = state.messages[index];
-        final bool showDateHeader =
-            index == 0 || _isDifferentDay(msg, state.messages[index - 1]);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (showDateHeader) _DateDivider(iso: msg.createdAt),
-            _MessageBubble(msg: msg),
-          ],
-        );
-      },
+      ),
+      builder: (List<TicketMessage> messages) => ListView.builder(
+        controller: scroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(ZeetSpacing.x4),
+        itemCount: messages.length,
+        itemBuilder: (BuildContext context, int index) {
+          final TicketMessage msg = messages[index];
+          final bool showDateHeader =
+              index == 0 || _isDifferentDay(msg, messages[index - 1]);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (showDateHeader) _DateDivider(iso: msg.createdAt),
+              _MessageBubble(msg: msg),
+            ],
+          );
+        },
+      ),
     );
   }
 

@@ -1,6 +1,5 @@
 // lib/screens/menu/index.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
@@ -12,6 +11,7 @@ import 'package:merchant/providers/menu_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/menu_service.dart';
+import 'package:merchant/services/navigation_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 class MenuScreen extends ConsumerStatefulWidget {
@@ -85,6 +85,29 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               });
             },
           ),
+          PopupMenuButton<String>(
+            tooltip: 'Gestion du catalogue',
+            icon: Icon(Icons.more_vert_rounded, color: textColor),
+            onSelected: (String route) => Routes.navigateTo(route),
+            itemBuilder: (_) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: Routes.products,
+                child: ListTile(
+                  leading: Icon(Icons.restaurant_menu_outlined),
+                  title: Text('Produits'),
+                  dense: true,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: Routes.productCategories,
+                child: ListTile(
+                  leading: Icon(Icons.category_outlined),
+                  title: Text('Categories'),
+                  dense: true,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: _buildBody(menusState, textColor, textLightColor, isDark),
@@ -124,11 +147,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               (menusState.status == MenusListStatus.loadingMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index == menusState.menus.length) {
-              return Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.w),
-                  child: const CircularProgressIndicator(),
-                ),
+              // Skeleton matching structure finale (skill zeet-motion-system §9).
+              return Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.h),
+                child: const ZeetSkeleton(height: 140),
               );
             }
 
@@ -307,7 +329,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   _buildActionButton(
                     icon: menu.isPublished ? 'visibility_off' : 'visibility_on',
                     label: menu.isPublished ? 'Desactiver' : 'Activer',
-                    color: menu.isPublished ? Colors.orange : Colors.green,
+                    color: menu.isPublished
+                        ? AppColors.warning
+                        : AppColors.success,
                     onTap: () => _togglePublish(menu),
                   ),
                   SizedBox(width: 8.w),
@@ -315,7 +339,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   _buildActionButton(
                     icon: 'delete',
                     label: 'Supprimer',
-                    color: Colors.red,
+                    color: AppColors.danger,
                     onTap: () => _confirmDelete(menu),
                   ),
                 ],
@@ -333,25 +357,31 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(6.r),
-      onTap: onTap,
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconManager.getIcon(icon, color: color, size: 16.r),
-            SizedBox(width: 4.w),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 11.sp,
-                fontWeight: FontWeight.w500,
+    // Hit target POS : 48pt min (cuisine, mains humides).
+    return Semantics(
+      label: label,
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8.r),
+        onTap: onTap,
+        child: Container(
+          constraints: BoxConstraints(minHeight: 48.h, minWidth: 48.w),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconManager.getIcon(icon, color: color, size: 18.r),
+              SizedBox(width: 6.w),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -592,7 +622,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             width: 8.w,
             height: 8.w,
             decoration: BoxDecoration(
-              color: item.status ? Colors.green : Colors.red,
+              color: item.status ? AppColors.success : AppColors.danger,
               shape: BoxShape.circle,
             ),
           ),
@@ -615,7 +645,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
 
     if (!confirm || !mounted) return;
 
-    await HapticFeedback.mediumImpact();
+    await ZeetHaptics.warning();
     final notifier = ref.read(menuDetailProvider.notifier);
     final success = await notifier.publish(menu.id);
 
@@ -657,7 +687,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              style: TextButton.styleFrom(foregroundColor: AppColors.danger),
               child: const Text('Supprimer'),
             ),
           ],

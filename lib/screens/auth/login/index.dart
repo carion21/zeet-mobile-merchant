@@ -14,6 +14,7 @@ import 'package:merchant/core/constants/sizes.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:merchant/services/permissions_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 import 'controllers.dart';
 
@@ -30,6 +31,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   late final AnimationController _enterController;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
+
+  /// Dernière erreur API de tentative de login. Affichée inline via
+  /// [ZeetErrorState] compact au-dessus du CTA sticky — en plus du toast,
+  /// pour l'utilisateur qui rouvre le clavier et ne voit plus le toast.
+  String? _lastLoginError;
 
   @override
   void initState() {
@@ -70,7 +76,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     FocusScope.of(context).unfocus();
     if (!_controller.formKey.currentState!.validate()) return;
 
-    setState(() => _controller.isLoading = true);
+    setState(() {
+      _controller.isLoading = true;
+      _lastLoginError = null;
+    });
 
     final error = await ref.read(authProvider.notifier).login(
           phone: _controller.phoneController.text,
@@ -78,15 +87,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         );
 
     if (!mounted) return;
-    setState(() => _controller.isLoading = false);
+    setState(() {
+      _controller.isLoading = false;
+      _lastLoginError = error;
+    });
 
     if (error == null) {
       AppToast.showSuccess(
         context: context,
         message: 'Connexion réussie',
       );
-      // Navigation vers le RootScaffold (bottom nav 4 tabs).
-      Routes.navigateAndRemoveAll(Routes.root);
+      // Gate permissions : premier login = onboarding des permissions.
+      // Si deja onboardees (reconnexion apres logout), passer direct au root.
+      final bool onboarded =
+          await PermissionsService.instance.isOnboarded();
+      if (!mounted) return;
+      if (onboarded) {
+        Routes.navigateAndRemoveAll(Routes.root);
+      } else {
+        Routes.navigateAndRemoveAll(Routes.permissions);
+      }
     } else {
       AppToast.showError(
         context: context,
@@ -180,6 +200,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       borderColor: borderColor,
                       onSubmitted: (_) => _submitForm(),
                     ),
+
+                    // Erreur API persistante — le toast disparait apres 4s,
+                    // ce bloc reste visible tant que l'utilisateur n'a pas
+                    // retape pour re-soumettre. Copy portee par l'API
+                    // (backend partner retourne deja un message FR).
+                    if (_lastLoginError != null) ...<Widget>[
+                      const SizedBox(height: 16),
+                      ZeetErrorState.fromError(
+                        _lastLoginError,
+                        compact: true,
+                        onRetry: _controller.isLoading ? null : _submitForm,
+                      ),
+                    ],
 
                     const SizedBox(height: 24),
 

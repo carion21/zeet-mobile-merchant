@@ -16,6 +16,7 @@ import 'package:zeet_ui/zeet_ui.dart';
 
 import 'package:merchant/models/wallet_model.dart';
 import 'package:merchant/providers/wallet_provider.dart';
+import 'transaction_detail_sheet.dart';
 
 class WalletScreen extends ConsumerStatefulWidget {
   const WalletScreen({super.key});
@@ -50,7 +51,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   }
 
   Future<void> _refresh() async {
-    await HapticFeedback.lightImpact();
+    await ZeetHaptics.success();
     await ref.read(walletProvider.notifier).refresh();
   }
 
@@ -85,9 +86,13 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
             _EntriesSliver(state: state),
             if (state.isLoadingMore)
               const SliverToBoxAdapter(
+                // Skeleton > spinner plein écran (skill zeet-motion-system §9).
                 child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x4),
-                  child: Center(child: CircularProgressIndicator()),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ZeetSpacing.x4,
+                    vertical: ZeetSpacing.x2,
+                  ),
+                  child: ZeetSkeleton(width: double.infinity, height: 64),
                 ),
               ),
             const SliverToBoxAdapter(child: SizedBox(height: ZeetSpacing.x8)),
@@ -155,13 +160,19 @@ class _BalanceHero extends StatelessWidget {
             if (isLoading)
               const ZeetSkeleton(width: 180, height: 36)
             else
-              ZeetMoney(
-                amount: balance,
-                currency: ZeetCurrency.fcfa,
-                style: tt.headlineMedium?.copyWith(
-                  color: scheme.onPrimary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                // Rolling counter : signal de récompense #1 quand le solde
+                // monte après livraison (skill zeet-neuro-ux §12bis dopamine).
+                child: ZeetRollingCounter(
+                  value: balance,
+                  suffix: ' FCFA',
+                  style: tt.headlineMedium?.copyWith(
+                    color: scheme.onPrimary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                  ),
                 ),
               ),
             const SizedBox(height: ZeetSpacing.x3),
@@ -186,11 +197,15 @@ class _BalanceHero extends StatelessWidget {
                     semanticLabel: 'Information',
                   ),
                   const SizedBox(width: ZeetSpacing.x1),
-                  Text(
-                    'Versements selon votre cycle de commission',
-                    style: tt.labelSmall?.copyWith(
-                      color: scheme.onPrimary,
-                      fontWeight: FontWeight.w500,
+                  Flexible(
+                    child: Text(
+                      'Versements selon votre cycle de commission',
+                      style: tt.labelSmall?.copyWith(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -245,7 +260,7 @@ class _FilterSegmented extends ConsumerWidget {
               label: f.label,
               selected: selected,
               onTap: () {
-                HapticFeedback.selectionClick();
+                ZeetHaptics.tap();
                 ref.read(walletProvider.notifier).setFilter(f);
               },
             ),
@@ -390,13 +405,21 @@ class _WalletEntryTile extends StatelessWidget {
         horizontal: ZeetSpacing.x4,
         vertical: ZeetSpacing.x1,
       ),
-      child: ZeetCard(
-        variant: ZeetCardVariant.outlined,
-        padding: const EdgeInsets.symmetric(
-          horizontal: ZeetSpacing.x4,
-          vertical: ZeetSpacing.x3,
-        ),
-        child: Row(
+      child: Builder(
+        builder: (BuildContext ctx) {
+          return ZeetCard(
+            variant: ZeetCardVariant.outlined,
+            enableHaptic: false, // Haptic heavyImpact custom ci-dessous.
+            padding: const EdgeInsets.symmetric(
+              horizontal: ZeetSpacing.x4,
+              vertical: ZeetSpacing.x3,
+            ),
+            onTap: () {
+              // Haptic fort (revert: remettre enableHaptic: true + supprimer onTap).
+              HapticFeedback.heavyImpact();
+              showTransactionDetailSheet(ctx, entry);
+            },
+            child: Row(
           children: <Widget>[
             // Pastille direction (couleur + icone + label a11y).
             Container(
@@ -460,7 +483,9 @@ class _WalletEntryTile extends StatelessWidget {
               ),
             ),
           ],
-        ),
+            ),
+          );
+        },
       ),
     );
   }

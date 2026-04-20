@@ -15,24 +15,34 @@ import 'package:zeet_ui/zeet_ui.dart';
 /// Retourne la sémantique [ZeetStatus] correspondant à la valeur
 /// brute d'un `OrderStatus` backend.
 ///
-/// Les statuts intermédiaires (`pending`, `confirmed`, `preparing`)
-/// sont `warning` : action merchant attendue. Les statuts terminaux
-/// positifs (`ready`, `delivered`) sont `success`. Les statuts en
-/// transit (`picked_up`) sont `info`. Les statuts destructeurs
-/// (`cancelled`, `rejected`) sont `danger`.
+/// Deux conventions coexistent et sont toutes les deux mappees :
+/// - **Backend canonique** (NestJS — cf. ORDERS_PARTNER_FLOW.md §2) :
+///   `payment-accepted`, `ready-for-delivery`, `on-the-way`, `canceled`,
+///   `failed`.
+/// - **Legacy/alias frontend** : `pending`, `ready`, `picked_up`,
+///   `cancelled`, `rejected` — garde par compatibilite avec l'historique
+///   de l'app.
+///
+/// `warning` = action merchant attendue ; `success` = etat positif stable ;
+/// `info` = transit ; `danger` = etat destructeur/echec.
 ZeetStatus partnerStatusFor(String? value) {
   switch (value) {
     case 'pending':
+    case 'payment-accepted':
     case 'confirmed':
     case 'preparing':
       return ZeetStatus.warning;
     case 'ready':
+    case 'ready-for-delivery':
     case 'delivered':
       return ZeetStatus.success;
     case 'picked_up':
+    case 'on-the-way':
       return ZeetStatus.info;
     case 'cancelled':
+    case 'canceled':
     case 'rejected':
+    case 'failed':
       return ZeetStatus.danger;
     default:
       return ZeetStatus.neutral;

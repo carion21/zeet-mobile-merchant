@@ -4,6 +4,11 @@ import 'package:merchant/screens/splash/index.dart';
 import 'package:merchant/screens/auth/login/index.dart';
 import 'package:merchant/screens/order_details/index.dart';
 import 'package:merchant/screens/menu/index.dart';
+import 'package:merchant/screens/opening_hours/index.dart';
+import 'package:merchant/screens/payouts/index.dart';
+import 'package:merchant/screens/permissions/index.dart';
+import 'package:merchant/screens/product_categories/index.dart';
+import 'package:merchant/screens/products/index.dart';
 import 'package:merchant/screens/root/index.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -28,6 +33,11 @@ class Routes {
   static const String orders = '/orders';
   static const String profile = '/profile';
   static const String menu = '/menu';
+  static const String permissions = '/permissions';
+  static const String productCategories = '/product-categories';
+  static const String products = '/products';
+  static const String payouts = '/payouts';
+  static const String openingHours = '/opening-hours';
 
   // Définition des constructeurs de widgets pour chaque route.
   // Les routes `home`, `orders`, `profile` pointent TOUTES sur
@@ -42,6 +52,11 @@ class Routes {
     orders: (context) => const RootScaffold(),
     profile: (context) => const RootScaffold(),
     menu: (context) => const MenuScreen(),
+    permissions: (context) => const PermissionsScreen(),
+    productCategories: (context) => const ProductCategoriesScreen(),
+    products: (context) => const ProductsScreen(),
+    payouts: (context) => const PayoutsScreen(),
+    openingHours: (context) => const OpeningHoursScreen(),
   };
 
   // ─── Helpers ZeetPageRoute ────────────────────────────────────────

@@ -215,4 +215,44 @@ class ProfileService {
       withAuth: true,
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // PATCH /v1/partner/open-now
+  // ---------------------------------------------------------------------------
+  /// Force l'etat ouvert/ferme du partner (override manuel).
+  ///
+  /// [isOpen] : true pour forcer ouvert, false pour forcer ferme, null pour
+  /// effacer l'override et revenir au schedule hebdomadaire (equivalent DELETE).
+  /// [reason] : raison du changement (analytics/support). Valeurs autorisees :
+  /// `manual`, `break_service`, `out_of_stock`, `technical_issue`, `end_of_day`.
+  /// [reopenAt] : ISO 8601 UTC — heure de reouverture automatique optionnelle.
+  ///
+  /// 403 si le partner est suspendu par l'admin.
+  Future<void> setOpenNow({
+    required bool? isOpen,
+    String reason = 'manual',
+    String? reopenAt,
+  }) async {
+    final body = <String, dynamic>{
+      'is_open': isOpen,
+      'reason': reason,
+      if (reopenAt != null) 'reopen_at': reopenAt,
+    };
+    await _apiClient.patch(
+      ProfileEndpoints.openNow,
+      body: body,
+      withAuth: true,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DELETE /v1/partner/open-now
+  // ---------------------------------------------------------------------------
+  /// Efface l'override manuel et revient au calcul du schedule hebdomadaire.
+  Future<void> clearOpenNow() async {
+    await _apiClient.delete(
+      ProfileEndpoints.openNow,
+      withAuth: true,
+    );
+  }
 }

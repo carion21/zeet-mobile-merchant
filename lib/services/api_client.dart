@@ -10,16 +10,19 @@ import 'package:http/http.dart' as http;
 class ApiException implements Exception {
   final int statusCode;
   final String message;
+  final String? code;
   final Map<String, dynamic>? errors;
 
   const ApiException({
     required this.statusCode,
     required this.message,
+    this.code,
     this.errors,
   });
 
   @override
-  String toString() => 'ApiException($statusCode): $message';
+  String toString() =>
+      'ApiException($statusCode${code != null ? " $code" : ""}): $message';
 
   /// Verifie si l'erreur est une 401 Unauthorized.
   bool get isUnauthorized => statusCode == 401;
@@ -271,9 +274,14 @@ class ApiClient {
       responseBody: body,
     );
 
+    // Extrait le `code` erreur metier s'il est present (pattern ZEET backend) :
+    // ex. ERR_WALLET_TRANSFER_RECIPIENT_UNAVAILABLE pour les lookups anti-enum.
+    final errorCode = body['code'] as String?;
+
     throw ApiException(
       statusCode: response.statusCode,
       message: message,
+      code: errorCode,
       errors: body['errors'] as Map<String, dynamic>?,
     );
   }

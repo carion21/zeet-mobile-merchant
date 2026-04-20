@@ -9,6 +9,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val INCOMING_RING_CHANNEL = "zeet/incoming_ring"
+        private const val APP_LAUNCHER_CHANNEL = "zeet/app_launcher"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -41,6 +42,32 @@ class MainActivity : FlutterActivity() {
                         startService(intent)
                     }
                     result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // MethodChannel pour ramener l'app au premier plan depuis un tap
+        // sur la bulle flottante (overlay). Appele depuis le main isolate
+        // quand il recoit {"action": "open_app"} via overlayListener.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APP_LAUNCHER_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "bringToFront" -> {
+                    val launch = packageManager.getLaunchIntentForPackage(packageName)
+                    if (launch != null) {
+                        launch.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK
+                                or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                        )
+                        startActivity(launch)
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
                 }
                 else -> result.notImplemented()
             }

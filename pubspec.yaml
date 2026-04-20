@@ -55,6 +55,32 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   # Lancement d'appels téléphoniques natifs (tel:) depuis les écrans commande
   url_launcher: ^6.3.1
+  # Selection d'images (upload logo partner, image categorie, images produits)
+  image_picker: ^1.1.2
+  # Bulle flottante "chat-head" par-dessus les autres apps (Android only)
+  # pour alerter le partner d'une nouvelle commande quand l'app est en bg.
+  flutter_overlay_window: ^0.4.5
+  # Runtime permissions cross-platform (notifications, battery, system alert
+  # window, exact alarm…). Utilise par l'ecran d'onboarding permissions.
+  permission_handler: ^11.3.1
+  # Detection reseau pour la sync queue offline-first.
+  connectivity_plus: ^6.1.0
+  # UUID pour les ids d'actions en queue.
+  uuid: ^4.5.1
+  # Persistence locale reactive des commandes + queue d'actions (offline-first).
+  drift: ^2.23.1
+  drift_flutter: ^0.2.4
+  sqlite3_flutter_libs: ^0.5.27
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  # Animations / staggered lists pour le polish POS.
+  flutter_animate: ^4.5.0
+  # Confetti discret pour les peak moments (fin de service reussi).
+  confetti: ^0.7.0
+  # Synthese vocale pour la lecture audio du code OTP de collecte
+  # (cuisine bruyante : le partner doit pouvoir dicter le code au rider
+  # sans le lire). Phase 2 — ecran OTP plein ecran.
+  flutter_tts: ^4.2.0
   zeet_ui:
     path: ../packages/zeet_ui
 
@@ -68,6 +94,20 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+  # Codegen drift (tables → DAO typee).
+  drift_dev: ^2.23.1
+  build_runner: ^2.4.13
+
+# Configuration des icônes de l'application
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo/logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/logo/logo.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -84,6 +124,14 @@ flutter:
   assets:
     - assets/images/category/
     - assets/images/wallet/
+    - assets/images/logo/
+    # Sons custom : sonnerie distincte pour les nouvelles commandes
+    # entrantes (channel `zeet_partner_incoming_order_v2`). Le fichier
+    # `incoming_order.mp3` est aussi copie en raw resource Android
+    # (android/app/src/main/res/raw/) pour etre utilise par le channel
+    # de notification systeme. Asset placeholder en attendant le master
+    # audio fourni par l'equipe sound design.
+    - assets/sounds/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
