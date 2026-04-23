@@ -9,6 +9,7 @@ import 'package:merchant/core/widgets/preparation_timer.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
+import 'package:merchant/core/widgets/order_code_text.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/screens/order_details/widgets/dynamic_action_bar.dart';
@@ -49,7 +50,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      ref.read(orderDetailProvider.notifier).load(
+      ref.read(orderDetailProvider(widget.orderId).notifier).load(
             widget.orderId,
             fromNotificationId: widget.fromNotificationId,
           );
@@ -66,11 +67,13 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     final Color textLightColor = scheme.onSurfaceVariant;
     final Color dividerColor = scheme.outlineVariant;
 
-    final detailState = ref.watch(orderDetailProvider);
+    final detailState = ref.watch(orderDetailProvider(widget.orderId));
 
     return Scaffold(
       backgroundColor: backgroundColor,
+      appBar: const ZeetAppBar(title: Text('Commande')),
       body: SafeArea(
+        top: false,
         child: _buildBody(
           detailState,
           backgroundColor,
@@ -119,34 +122,15 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       isLoading: isLoading,
       error: error,
       isOffline: isOffline && !hasOrder,
-      onRetry: () =>
-          ref.read(orderDetailProvider.notifier).load(widget.orderId),
-      loading: Column(
-        children: <Widget>[
-          _buildSimpleHeader(textColor),
-          const Expanded(
-            child: ZeetSkeletonList(itemCount: 4, itemHeight: 96),
-          ),
-        ],
-      ),
-      errorBuilder: (Object err, VoidCallback? retry) => Column(
-        children: <Widget>[
-          _buildSimpleHeader(textColor),
-          Expanded(
-            child: ZeetErrorState.fromError(err, onRetry: retry),
-          ),
-        ],
-      ),
-      offlineBuilder: (VoidCallback? retry) => Column(
-        children: <Widget>[
-          _buildSimpleHeader(textColor),
-          Expanded(
-            child: ZeetErrorState(
-              kind: ZeetErrorKind.network,
-              onRetry: retry,
-            ),
-          ),
-        ],
+      onRetry: () => ref
+          .read(orderDetailProvider(widget.orderId).notifier)
+          .load(widget.orderId),
+      loading: const ZeetSkeletonList(itemCount: 4, itemHeight: 96),
+      errorBuilder: (Object err, VoidCallback? retry) =>
+          ZeetErrorState.fromError(err, onRetry: retry),
+      offlineBuilder: (VoidCallback? retry) => ZeetErrorState(
+        kind: ZeetErrorKind.network,
+        onRetry: retry,
       ),
       builder: (Order order) => _buildOrderDetail(
         order,
@@ -175,9 +159,6 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
     return Column(
       children: [
-        // Header
-        _buildHeader(order, textColor, textLightColor, dateFormat),
-
         // Contenu scrollable
         Expanded(
           child: SingleChildScrollView(
@@ -185,6 +166,8 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                SizedBox(height: 12.h),
+                _buildCodeLine(order, textLightColor, dateFormat),
                 SizedBox(height: 16.h),
 
                 // Statut
@@ -248,31 +231,9 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     );
   }
 
-  Widget _buildSimpleHeader(Color textColor) {
-    return Padding(
-      padding: EdgeInsets.all(16.w),
-      child: Row(
-        children: [
-          IconButton(
-            icon: IconManager.getIcon('arrow_back', color: textColor),
-            onPressed: () => Routes.goBack(),
-          ),
-          SizedBox(width: 12.w),
-          Text(
-            'Détail commande',
-            style: TextStyle(
-              fontSize: 18.sp,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(
-      Order order, Color textColor, Color textLightColor, DateFormat dateFormat) {
+  /// Ligne code (copiable 1 tap) + date, compacte, sous l'AppBar.
+  Widget _buildCodeLine(
+      Order order, Color textLightColor, DateFormat dateFormat) {
     String formattedDate = '';
     if (order.createdAt != null) {
       try {
@@ -283,43 +244,17 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     }
     final String code = order.code ?? '#${order.id}';
 
-    return Padding(
-      padding: EdgeInsets.all(16.w),
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            icon: IconManager.getIcon('arrow_back', color: textColor),
-            onPressed: () => Routes.goBack(),
-          ),
-          SizedBox(width: 8.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Commande',
-                  style: TextStyle(
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.w500,
-                    color: textLightColor,
-                  ),
-                ),
-                SizedBox(height: 2.h),
-                // Code prominent copiable — 1 tap = presse-papier + haptic
-                // + toast. Pattern POS §8 : action récurrente à 1 tap.
-                _HeaderCodeButton(code: code),
-                if (formattedDate.isNotEmpty) ...<Widget>[
-                  SizedBox(height: 4.h),
-                  Text(
-                    formattedDate,
-                    style: TextStyle(fontSize: 12.sp, color: textLightColor),
-                  ),
-                ],
-              ],
-            ),
+    return Row(
+      children: <Widget>[
+        Flexible(child: _HeaderCodeButton(code: code)),
+        if (formattedDate.isNotEmpty) ...<Widget>[
+          SizedBox(width: 12.w),
+          Text(
+            formattedDate,
+            style: TextStyle(fontSize: 12.sp, color: textLightColor),
           ),
         ],
-      ),
+      ],
     );
   }
 
@@ -329,11 +264,16 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     // Glance-first (POS §6) : le statut est la première info scannable.
     // La flex sur label + timer évite tout overflow quand le statut a un
     // label long ("En préparation") combiné à un timer (>20 min).
-    final (Color stripColor, Color stripText) = _stripColorsFor(order.status);
+    //
+    // Couleur authoritative depuis `last_order_status.color` backend.
+    final Color stripColor =
+        order.orderStatus?.colorValue ?? ZeetColors.inkMuted;
     final bool isOngoing =
         order.status == 'confirmed' || order.status == 'preparing';
-    final String statusLabel = order.orderStatus?.displayLabel ??
-        _fallbackStatusLabel(order.status);
+    final String? rawLabel = order.orderStatus?.displayLabel;
+    final String statusLabel = (rawLabel != null && rawLabel.trim().isNotEmpty)
+        ? rawLabel
+        : _fallbackStatusLabel(order.status);
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -364,7 +304,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
               style: TextStyle(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w700,
-                color: stripText,
+                color: stripColor,
                 letterSpacing: 0.2,
               ),
             ),
@@ -378,32 +318,17 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     );
   }
 
-  /// Couleurs du status strip — cohérentes avec la card de liste.
-  (Color, Color) _stripColorsFor(String? statusValue) {
-    switch (statusValue) {
-      case 'pending':
-      case 'confirmed':
-      case 'preparing':
-        return (ZeetColors.warningText, ZeetColors.warningText);
-      case 'ready':
-      case 'delivered':
-        return (ZeetColors.successText, ZeetColors.successText);
-      case 'picked_up':
-      case 'on-the-way':
-        return (ZeetColors.infoText, ZeetColors.infoText);
-      case 'cancelled':
-      case 'rejected':
-        return (ZeetColors.dangerText, ZeetColors.dangerText);
-      default:
-        return (ZeetColors.inkMuted, ZeetColors.inkMuted);
-    }
-  }
-
   String _fallbackStatusLabel(String? value) {
+    // Normalise aussi la chaine vide en "inconnu" — le backend peut
+    // renvoyer un `status: ""` ou un `last_order_status` null pour des
+    // commandes freshly created : sans cette garde, la chip affichait
+    // juste le dot + aucun label (issue visuelle sur detail partner).
+    if (value == null || value.trim().isEmpty) return 'Statut inconnu';
     switch (value) {
       case 'pending':
         return 'En attente';
       case 'confirmed':
+      case 'payment-accepted':
         return 'Confirmée';
       case 'preparing':
         return 'En préparation';
@@ -419,7 +344,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       case 'rejected':
         return 'Refusée';
       default:
-        return value ?? '—';
+        return value;
     }
   }
 
@@ -927,70 +852,364 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     );
   }
 
+  /// Section "Historique" d'une commande :
+  ///
+  /// 1. Card "Vos performances" — UNIQUEMENT les durees que le partner
+  ///    controle (acceptation + preparation). On omet volontairement
+  ///    `pickup_wait`, `transit` et `total` — ce sont des metriques rider,
+  ///    pas des performances partner, les afficher ici brouillerait la
+  ///    lecture.
+  /// 2. Timeline verticale : dot colore depuis `order_status.color`
+  ///    backend (jamais de mapping cote Flutter, cf. feedback
+  ///    `status_colors_from_core`), label + heure a droite, observation
+  ///    en ligne secondaire si presente (hors strings techniques
+  ///    "Synced from delivery → ...").
+  ///
+  /// Motion : volontairement statique — budget POS partner ≤ 200ms,
+  /// zero animation decorative sur un ecran de flux operationnel.
   Widget _buildLogsSection(
       Order order, Color textColor, Color textLightColor) {
+    final List<OrderLog> logs = List<OrderLog>.from(order.logs)
+      ..sort((OrderLog a, OrderLog b) {
+        final DateTime? da = _parseLogDate(a.createdAt);
+        final DateTime? db = _parseLogDate(b.createdAt);
+        if (da != null && db != null) return da.compareTo(db);
+        return (a.id ?? 0).compareTo(b.id ?? 0);
+      });
+    final OrderTimings? timings = order.timings;
+    final bool showPerf = timings != null &&
+        (timings.acceptanceSeconds != null ||
+            timings.preparationSeconds != null);
+    if (logs.isEmpty && !showPerf) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Historique',
-          style: TextStyle(
-            fontSize: 18.sp,
-            fontWeight: FontWeight.bold,
-            color: textColor,
-          ),
-        ),
-        SizedBox(height: 16.h),
-        ...order.logs.map((log) {
-          String logDate = '';
-          if (log.createdAt != null) {
-            try {
-              final dt = DateTime.parse(log.createdAt!);
-              logDate = DateFormat('dd/MM HH:mm', 'fr_FR').format(dt);
-            } catch (_) {}
-          }
-
-          return Padding(
-            padding: EdgeInsets.only(bottom: 12.h),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 8.w,
-                  height: 8.h,
-                  margin: EdgeInsets.only(top: 6.h),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        log.description ?? log.action ?? '',
-                        style: TextStyle(
-                          fontSize: 14.sp,
-                          color: textColor,
-                        ),
-                      ),
-                      if (logDate.isNotEmpty)
-                        Text(
-                          logDate,
-                          style: TextStyle(
-                              fontSize: 12.sp, color: textLightColor),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+      children: <Widget>[
+        if (showPerf) ...<Widget>[
+          Text(
+            'Vos performances',
+            style: TextStyle(
+              fontSize: 18.sp,
+              fontWeight: FontWeight.bold,
+              color: textColor,
             ),
-          );
-        }),
+          ),
+          SizedBox(height: 12.h),
+          _buildPartnerPerformance(timings, textColor, textLightColor),
+          SizedBox(height: 24.h),
+        ],
+        if (logs.isNotEmpty) ...<Widget>[
+          Text(
+            'Historique',
+            style: TextStyle(
+              fontSize: 18.sp,
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
+          ),
+          SizedBox(height: 12.h),
+          ...List<Widget>.generate(logs.length, (int i) {
+            return _buildLogEntry(
+              logs[i],
+              textColor,
+              textLightColor,
+              isLast: i == logs.length - 1,
+              showConnector: i < logs.length - 1,
+            );
+          }),
+        ],
       ],
     );
+  }
+
+  /// Une entree de timeline : dot colore + label + heure + observation
+  /// optionnelle. Quand `showConnector` est vrai, une ligne verticale
+  /// prolonge le dot vers l'entree suivante (rail continu).
+  Widget _buildLogEntry(
+    OrderLog log,
+    Color textColor,
+    Color textLightColor, {
+    required bool isLast,
+    required bool showConnector,
+  }) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color statusColor = log.orderStatus?.colorValue ?? scheme.outline;
+    final String rawLabel = log.orderStatus?.displayLabel ?? '';
+    final String label = rawLabel.trim().isNotEmpty
+        ? rawLabel
+        : _fallbackStatusLabel(log.orderStatus?.value);
+    final String? observation = _cleanLogObservation(log.observation);
+    final String timeLabel = _formatLogTime(log.createdAt);
+    final double dotSize = isLast ? 14.w : 10.w;
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(
+            width: 18.w,
+            child: Column(
+              children: <Widget>[
+                SizedBox(height: 4.h),
+                Container(
+                  width: dotSize,
+                  height: dotSize,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: isLast
+                        ? Border.all(
+                            color: statusColor.withValues(alpha: 0.22),
+                            width: 3,
+                          )
+                        : null,
+                  ),
+                ),
+                if (showConnector)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      margin: EdgeInsets.symmetric(vertical: 2.h),
+                      color: scheme.outlineVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(width: 12.w),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: 2.h,
+                bottom: showConnector ? 14.h : 0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14.sp,
+                            fontWeight:
+                                isLast ? FontWeight.w700 : FontWeight.w600,
+                            color: isLast ? statusColor : textColor,
+                            letterSpacing: 0.1,
+                          ),
+                        ),
+                      ),
+                      if (timeLabel.isNotEmpty) ...<Widget>[
+                        SizedBox(width: 8.w),
+                        Text(
+                          timeLabel,
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            color: textLightColor,
+                            fontFeatures: const <FontFeature>[
+                              FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (observation != null) ...<Widget>[
+                    SizedBox(height: 3.h),
+                    Text(
+                      observation,
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        color: textLightColor,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Card "Vos performances" — 2 tuiles cote a cote :
+  /// - **Acceptation** (`pending → confirmed`) : votre reactivite a
+  ///   prendre la commande.
+  /// - **Preparation** (`confirmed → ready-for-delivery`) : votre
+  ///   efficacite en cuisine.
+  ///
+  /// Uniquement ces deux metriques car ce sont les SEULES que le partner
+  /// maitrise reellement. Attente livreur + trajet dependent du rider,
+  /// total est pollue par ces deux phases — les afficher ici ferait
+  /// porter au partner une responsabilite qui n'est pas la sienne.
+  ///
+  /// Si une seule des deux metriques est dispo (commande en cours), la
+  /// tuile unique prend toute la largeur.
+  Widget _buildPartnerPerformance(
+    OrderTimings t,
+    Color textColor,
+    Color textLightColor,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<_PerfTile> tiles = <_PerfTile>[
+      if (t.acceptanceSeconds != null)
+        _PerfTile(
+          label: 'Acceptation',
+          value: _formatDuration(t.acceptanceSeconds!),
+          caption: 'Délai avant confirmation',
+        ),
+      if (t.preparationSeconds != null)
+        _PerfTile(
+          label: 'Préparation',
+          value: _formatDuration(t.preparationSeconds!),
+          caption: 'Temps en cuisine',
+        ),
+    ];
+    if (tiles.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12.r),
+        border: Border.all(color: scheme.outlineVariant, width: 1),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < tiles.length; i++) ...<Widget>[
+              Expanded(
+                child: _buildPerfTile(tiles[i], textColor, textLightColor),
+              ),
+              if (i < tiles.length - 1)
+                Container(
+                  width: 1,
+                  color: scheme.outlineVariant,
+                  margin: EdgeInsets.symmetric(horizontal: 12.w),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPerfTile(
+    _PerfTile tile,
+    Color textColor,
+    Color textLightColor,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          tile.label,
+          style: TextStyle(
+            fontSize: 12.sp,
+            color: textLightColor,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
+        SizedBox(height: 6.h),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            tile.value,
+            style: TextStyle(
+              fontSize: 24.sp,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w800,
+              height: 1.0,
+              letterSpacing: -0.3,
+              fontFeatures: const <FontFeature>[
+                FontFeature.tabularFigures(),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: 4.h),
+        Text(
+          tile.caption,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11.sp,
+            color: textLightColor,
+            height: 1.3,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Filtre les observations de plumbing backend (ex.
+  /// `"Synced from delivery → on-the-way"`) qui n'ont aucune valeur
+  /// cote partner et polluent l'historique. Les autres observations
+  /// libres sont affichees telles quelles.
+  String? _cleanLogObservation(String? raw) {
+    if (raw == null) return null;
+    final String t = raw.trim();
+    if (t.isEmpty) return null;
+    if (t.toLowerCase().startsWith('synced from')) return null;
+    return t;
+  }
+
+  DateTime? _parseLogDate(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return DateTime.parse(raw).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Heure locale dans un format compact :
+  /// - meme jour : `HH:mm`
+  /// - sinon meme annee : `dd/MM · HH:mm`
+  /// - sinon : `dd/MM/yyyy · HH:mm`
+  String _formatLogTime(String? raw) {
+    final DateTime? dt = _parseLogDate(raw);
+    if (dt == null) return '';
+    final DateTime now = DateTime.now();
+    final bool sameDay =
+        dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    if (sameDay) {
+      return DateFormat('HH:mm', 'fr_FR').format(dt);
+    }
+    final String pattern =
+        dt.year == now.year ? 'dd/MM · HH:mm' : 'dd/MM/yyyy · HH:mm';
+    return DateFormat(pattern, 'fr_FR').format(dt);
+  }
+
+  /// Formate une duree en secondes en copy partner (sobre, FR) :
+  /// - `< 60 s` : `"12 s"`
+  /// - `< 1 h`  : `"13 min"` ou `"13 min 46 s"` (omet `0 s`)
+  /// - `≥ 1 h`  : `"1 h"` ou `"1 h 15 min"` (omet `0 min`)
+  ///
+  /// Valeurs negatives → absolues (tolerance aux horloges desync).
+  String _formatDuration(int seconds) {
+    final int s = seconds < 0 ? -seconds : seconds;
+    if (s < 60) return '$s s';
+    final int minutes = s ~/ 60;
+    final int remSec = s % 60;
+    if (minutes < 60) {
+      if (remSec == 0) return '$minutes min';
+      return '$minutes min $remSec s';
+    }
+    final int hours = minutes ~/ 60;
+    final int remMin = minutes % 60;
+    if (remMin == 0) return '$hours h';
+    return '$hours h $remMin min';
   }
 
   Widget _buildActionBar(
@@ -1147,14 +1366,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     // Haptics propagés (quickwin vague 2 §QW5) : confirmation sur tap,
     // succès lourd sur validation backend.
     HapticFeedback.mediumImpact();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
           context: context, message: error ?? 'Erreur lors de la confirmation');
     }
@@ -1162,7 +1381,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Future<void> _markPreparing(Order order) async {
     HapticFeedback.mediumImpact();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.markPreparing(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
@@ -1170,14 +1389,14 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           context: context, message: 'Préparation lancée — un livreur a été assigné');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }
 
   Future<void> _markReady(Order order) async {
     HapticFeedback.mediumImpact();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.markReady(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
@@ -1185,7 +1404,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           context: context, message: 'Commande prête pour collecte');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }
@@ -1197,7 +1416,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     final reason = await showCancelReasonSheet(context);
     if (reason == null || !mounted) return;
 
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
@@ -1205,7 +1424,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
       ref.read(ordersListProvider.notifier).refresh();
       Routes.goBack();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
           context: context, message: error ?? 'Erreur lors de l\'annulation');
     }
@@ -1213,7 +1432,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
 
   Future<void> _resendOtp() async {
     HapticFeedback.mediumImpact();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(widget.orderId).notifier);
     final success = await notifier.resendPickupOtp(widget.orderId);
     if (success && mounted) {
       HapticFeedback.lightImpact();
@@ -1222,7 +1441,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
         message: 'Nouveau code envoye au livreur.',
       );
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(widget.orderId)).actionError;
       AppToast.showWarning(
         context: context,
         message: error ?? 'Renvoi impossible. Reessayez plus tard.',
@@ -1258,11 +1477,16 @@ class _HeaderCodeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // Header détail : le bouton partage sa ligne avec la date formatée
+    // ("21 avr. 2026 · 14h32"). `OrderCodeText` affiche le code complet
+    // tant que ça rentre, sinon `#…<9 derniers>`. Le tap copie le code
+    // COMPLET pour le support, quelle que soit la forme affichée.
     return Semantics(
       button: true,
       label: 'Code commande $code, toucher pour copier',
       child: Material(
-        color: AppColors.primary.withValues(alpha: 0.10),
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8.r),
         child: InkWell(
           borderRadius: BorderRadius.circular(8.r),
@@ -1281,15 +1505,13 @@ class _HeaderCodeButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Flexible(
-                  child: Text(
-                    code,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: OrderCodeText(
+                    code: code,
                     style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primary,
-                      letterSpacing: 0.5,
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                      letterSpacing: 0.3,
                       fontFamily: 'monospace',
                       fontFamilyFallback: const <String>['Menlo', 'Consolas'],
                       fontFeatures: const <FontFeature>[
@@ -1301,8 +1523,8 @@ class _HeaderCodeButton extends StatelessWidget {
                 SizedBox(width: 8.w),
                 Icon(
                   Icons.content_copy_rounded,
-                  size: 16.r,
-                  color: AppColors.primary,
+                  size: 14.r,
+                  color: scheme.onSurfaceVariant,
                 ),
               ],
             ),
@@ -1311,4 +1533,17 @@ class _HeaderCodeButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Donnees d'une tuile de la card "Vos performances" (`_buildPerfTile`).
+class _PerfTile {
+  const _PerfTile({
+    required this.label,
+    required this.value,
+    required this.caption,
+  });
+
+  final String label;
+  final String value;
+  final String caption;
 }

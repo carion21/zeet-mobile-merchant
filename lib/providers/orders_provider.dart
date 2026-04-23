@@ -512,6 +512,41 @@ class OrderDetailNotifier extends StateNotifier<OrderDetailState> {
       // ignore: unawaited_futures
       _fetchActionsFor(order.status);
     }
+
+    // Les endpoints de transition (POST /confirm|preparing|ready|cancel)
+    // renvoient parfois `last_order_status` comme simple id, sans `label`/
+    // `color`/`value`. On detecte ce cas et on re-fetch silencieusement
+    // le detail pour recuperer l'objet statut complet. Sans ca, la chip
+    // statut affichait "status-5" ou "Statut inconnu" et perdait sa
+    // couleur metier tant qu'un FCM/push ne forcait pas un reload.
+    final String? label = order.orderStatus?.label;
+    final String? value = order.orderStatus?.value;
+    final bool isEnriched = (label != null && label.trim().isNotEmpty) ||
+        (value != null && value.trim().isNotEmpty);
+    if (!isEnriched) {
+      // ignore: unawaited_futures
+      _silentRefresh(order.id);
+    }
+  }
+
+  /// Refetch silencieux de la commande : ne flippe pas en `loading` pour
+  /// eviter un flash de l'ecran. Utilise apres une action quand la reponse
+  /// du backend n'embed pas le `last_order_status` enrichi.
+  Future<void> _silentRefresh(int orderId) async {
+    try {
+      final Order order = _syncManager != null
+          ? await _syncManager.fetchOrderDetail(orderId)
+          : await _orderService.getOrderDetail(orderId);
+      if (!mounted) return;
+      final previousStatus = state.order?.status;
+      state = state.copyWith(order: order);
+      if (previousStatus != order.status) {
+        // ignore: unawaited_futures
+        _fetchActionsFor(order.status);
+      }
+    } catch (e) {
+      debugPrint('[OrderDetailNotifier] silentRefresh failed: $e');
+    }
   }
 
   /// Passe la commande en preparation (POST /orders/:id/preparing).
@@ -716,9 +751,22 @@ final ordersListProvider =
 });
 
 /// Provider pour le detail d'une commande.
-/// Utilise .family pour pouvoir charger plusieurs commandes independamment.
-final orderDetailProvider =
-    StateNotifierProvider<OrderDetailNotifier, OrderDetailState>((ref) {
+///
+/// **Family keyed par `orderId`** : chaque commande a son propre notifier
+/// et son propre state. Indispensable pour eviter les ecrasements de
+/// state quand :
+///   - L'ecran detail est ouvert sur une commande A et un FCM pour une
+///     commande B arrive (sans family, load(B) ecrasait l'affichage de A).
+///   - La liste des commandes et un detail sont manipules en parallele
+///     (swipe-to-confirm sur A dans la liste pendant qu'on consulte B).
+///
+/// Pas de `.autoDispose` volontairement : les call-sites des screens de
+/// liste lisent `actionError` APRES l'await de l'action, et un autoDispose
+/// pourrait disposer l'etat entre-temps si aucun watcher n'est monte.
+/// Le cout memoire est negligeable (quelques dizaines d'entrees max sur
+/// une session partner).
+final orderDetailProvider = StateNotifierProvider.family<
+    OrderDetailNotifier, OrderDetailState, int>((ref, int orderId) {
   return OrderDetailNotifier(syncManager: ref.watch(syncManagerProvider));
 });
 
@@ -760,4 +808,22 @@ final pendingOrdersCountProvider = Provider<int>((ref) {
 /// Statuts disponibles pour le filtre.
 final orderStatusOptionsProvider = Provider<List<OrderStatusOption>>((ref) {
   return ref.watch(ordersListProvider).statusOptions;
+});
+
+/// Map `status.value → OrderStatusOption` dérivée de [orderStatusOptionsProvider].
+///
+/// Utilisée pour résoudre la couleur canonique d'un statut en O(1), notamment
+/// pour colorer les swipe-to-confirm selon le statut cible (cf. skills neuro-ux
+/// "couleur = signal sémantique" et pos-ergonomics "tout vert désensibilise").
+final orderStatusByValueProvider =
+    Provider<Map<String, OrderStatusOption>>((ref) {
+  final List<OrderStatusOption> options = ref.watch(orderStatusOptionsProvider);
+  final Map<String, OrderStatusOption> map = <String, OrderStatusOption>{};
+  for (final OrderStatusOption option in options) {
+    final String? value = option.value;
+    if (value != null && value.isNotEmpty) {
+      map[value] = option;
+    }
+  }
+  return map;
 });

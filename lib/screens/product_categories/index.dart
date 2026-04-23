@@ -19,6 +19,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/category_model.dart';
 import 'package:merchant/providers/category_provider.dart';
@@ -39,7 +40,14 @@ class _ProductCategoriesScreenState
     extends ConsumerState<ProductCategoriesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
   bool _isSearching = false;
+
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await ref.read(categoriesListProvider.notifier).refresh();
+    _freshKey.currentState?.bump();
+  }
 
   @override
   void initState() {
@@ -81,11 +89,8 @@ class _ProductCategoriesScreenState
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: TextStyle(color: textColor, fontSize: 16.sp),
-                decoration: InputDecoration(
-                  hintText: 'Rechercher une categorie…',
-                  hintStyle:
-                      TextStyle(color: textLightColor, fontSize: 14.sp),
+                decoration: const InputDecoration(
+                  hintText: 'Rechercher une catégorie…',
                   border: InputBorder.none,
                 ),
                 onSubmitted: (query) {
@@ -94,15 +99,22 @@ class _ProductCategoriesScreenState
                       .searchCategories(query);
                 },
               )
-            : const Text('Categories'),
+            : const Text('Catégories'),
         actions: <Widget>[
-          IconButton(
-            icon: IconManager.getIcon(
-              _isSearching ? 'close' : 'search',
-              color: textColor,
+          Padding(
+            padding: EdgeInsets.only(right: 4.w),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
             ),
+          ),
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
             tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
             onPressed: () {
+              ZeetHaptics.tap();
               setState(() {
                 _isSearching = !_isSearching;
                 if (!_isSearching) {
@@ -122,7 +134,7 @@ class _ProductCategoriesScreenState
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         icon: IconManager.getIcon('add', color: Colors.white),
-        label: const Text('Nouvelle categorie'),
+        label: const Text('Nouvelle catégorie'),
       ),
     );
   }
@@ -142,10 +154,13 @@ class _ProductCategoriesScreenState
         );
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(categoriesListProvider.notifier).refresh(),
+      onRefresh: _refreshAll,
       child: ZeetScreenScaffold(
         state: _resolveState(state, isOnline),
-        onRetry: () => ref.read(categoriesListProvider.notifier).load(),
+        onRetry: () async {
+          await ref.read(categoriesListProvider.notifier).load();
+          _freshKey.currentState?.bump();
+        },
         loading: const ZeetSkeletonList(itemCount: 6, itemHeight: 88),
         emptyTitle: 'Aucune categorie',
         emptySubtitle:

@@ -47,32 +47,54 @@ const int kIncomingOrderNotificationId = 1001;
 /// en vol pour rester dans une plage int32 sure.
 const int kSyncFailedNotificationIdBase = 3000;
 
+/// Base id pour les notifs "mise a jour commande" (rider_assigned, cancelled,
+/// delivered, otp.updated…). Offset par l'orderId pour que plusieurs updates
+/// simultanees sur des commandes differentes s'empilent au lieu de s'ecraser.
+/// Plafonne a 65k commandes en vol pour rester dans la plage int32.
+const int kOrderUpdateNotificationIdBase = 2000;
+
 /// Id du canal Android. DOIT correspondre a celui que le backend place
 /// eventuellement dans `android.notification.channel_id` de ses pushes FCM
 /// pour beneficier du meme son/priorite.
 ///
 /// **Versionnage** : Android refuse de modifier le son d'un channel apres
 /// sa creation (cf. NotificationChannel.setSound docs). Bumper le suffixe a
-/// chaque changement de son / d'importance. `_v3` : alignement du channel
-/// natif `IncomingRingService.CHANNEL_ID` (Kotlin) sur cet id + passage a
-/// `IMPORTANCE_MAX` cote natif (auparavant HIGH, degradait les notifs FSI
-/// quand le service natif s'affichait tout seul).
-const String kIncomingOrderChannelId = 'zeet_partner_incoming_order_v3';
+/// chaque changement de son / d'importance. `_v4` : retrait de la
+/// `RawResourceAndroidNotificationSound('incoming_order')` tant que le MP3
+/// n'est pas livre — certains OEMs (Samsung notamment) creaient un channel
+/// silencieux ou droppaient la notif quand la raw resource etait
+/// introuvable, au lieu de fallback sur le son systeme comme annonce. En
+/// omettant le `sound:`, on laisse Android utiliser le son de notif
+/// systeme par defaut, ce qui marche partout.
+const String kIncomingOrderChannelId = 'zeet_partner_incoming_order_v4';
 const String kIncomingOrderChannelName = 'Nouvelles commandes';
 const String kIncomingOrderChannelDesc =
     'Alertes prioritaires avec sonnerie distincte pour les nouvelles commandes entrantes.';
 
-/// Nom de la raw resource Android pour la sonnerie incoming order.
-/// Doit correspondre exactement au nom du fichier dans
+/// Nom de la raw resource Android pour la sonnerie incoming order. Doit
+/// correspondre exactement au nom du fichier dans
 /// `android/app/src/main/res/raw/<name>.mp3` (lowercase, pas d'espaces).
-/// Si la raw resource est absente, Android retombe automatiquement sur le
-/// son de notification systeme par defaut.
+///
+/// Tant que [kHasCustomIncomingSound] est `false`, cette constante n'est
+/// pas utilisee — on laisse Android / iOS jouer leur son systeme par defaut.
 const String kIncomingOrderSoundResource = 'incoming_order';
 
-/// Nom du fichier de sonnerie iOS — bundle dans ios/Runner/. Si absent,
-/// iOS retombe sur le son par defaut. Format `.caf` recommande (Core Audio
-/// Format), voir `assets/sounds/README.md`.
+/// Nom du fichier de sonnerie iOS — bundle dans ios/Runner/. Format `.caf`
+/// recommande (Core Audio Format), voir `assets/sounds/README.md`.
 const String kIncomingOrderSoundIos = 'incoming_order.caf';
+
+/// Flipper : `true` quand le MP3 / CAF custom est bien commit dans
+/// `android/app/src/main/res/raw/` et `ios/Runner/`. Tant qu'il est `false`,
+/// on omet le parametre `sound` des notifs/channels → fallback propre sur
+/// le son systeme par defaut. Quand le sound design livre les assets :
+///   1. Copier `incoming_order.mp3` dans `android/app/src/main/res/raw/`.
+///   2. Copier `incoming_order.caf` dans `ios/Runner/` + ajouter au
+///      bundle Xcode (Build Phases → Copy Bundle Resources).
+///   3. Basculer ce flag a `true` ET bumper [kIncomingOrderChannelId]
+///      (`_v4` → `_v5`) pour forcer Android a recreer le channel avec
+///      le nouveau son — Android refuse de modifier le son d'un channel
+///      existant.
+const bool kHasCustomIncomingSound = false;
 
 /// Canal pour les mises à jour de statut (annulation client, OTP, livreur
 /// assigné). Importance HIGH : son + vibration mais PAS d'alarme — le
@@ -273,10 +295,14 @@ class LocalNotificationService {
   }
 
   static Future<void> _createChannel() async {
-    // Canal 1 — Nouvelles commandes (max, sonnerie distincte custom,
-    // FullScreenIntent). Le son `incoming_order.mp3` doit etre present
-    // dans `android/app/src/main/res/raw/`. Si absent, Android retombe
-    // proprement sur le son systeme par defaut sans crasher.
+    // Canal 1 — Nouvelles commandes (max, FullScreenIntent). Tant que
+    // [kHasCustomIncomingSound] est `false` (MP3 pas encore livre), on
+    // n'attache PAS de `RawResourceAndroidNotificationSound` — certains
+    // OEMs creaient un channel silencieux ou droppaient la notif quand la
+    // raw resource n'existait pas, au lieu du fallback systeme annonce.
+    // Sans `sound:`, Android joue le son de notif par defaut, qui marche
+    // partout. Quand le MP3 sera livre : flipper [kHasCustomIncomingSound]
+    // a `true` + bumper [kIncomingOrderChannelId] (`_v4` -> `_v5`).
     final AndroidNotificationChannel incomingChannel =
         AndroidNotificationChannel(
       kIncomingOrderChannelId,
@@ -284,9 +310,11 @@ class LocalNotificationService {
       description: kIncomingOrderChannelDesc,
       importance: Importance.max,
       playSound: true,
-      sound: const RawResourceAndroidNotificationSound(
-        kIncomingOrderSoundResource,
-      ),
+      sound: kHasCustomIncomingSound
+          ? const RawResourceAndroidNotificationSound(
+              kIncomingOrderSoundResource,
+            )
+          : null,
       enableVibration: true,
       // Pattern long et marque (cuisine bruyante).
       vibrationPattern: Int64List.fromList(
@@ -431,12 +459,16 @@ class LocalNotificationService {
       autoCancel: false,
       // Visible sur lockscreen avec contenu complet.
       visibility: NotificationVisibility.public,
-      // Son distinct custom : tente la raw resource, fallback systeme alarm
-      // si absente (Android ignore silencieusement et joue le default).
+      // Son : raw resource custom si livree ([kHasCustomIncomingSound]),
+      // sinon on omet le parametre pour laisser Android jouer le son de
+      // notif par defaut. Attacher une raw resource invalide faisait
+      // dropper la notif sur certains OEMs au lieu du fallback annonce.
       playSound: true,
-      sound: const RawResourceAndroidNotificationSound(
-        kIncomingOrderSoundResource,
-      ),
+      sound: kHasCustomIncomingSound
+          ? const RawResourceAndroidNotificationSound(
+              kIncomingOrderSoundResource,
+            )
+          : null,
       // Audio en mode alarm pour bypass DND (avec permission utilisateur).
       audioAttributesUsage: AudioAttributesUsage.alarm,
       enableVibration: true,
@@ -469,8 +501,11 @@ class LocalNotificationService {
     // iOS : `timeSensitive` permet de percer le Focus Mode si l'utilisateur
     // l'autorise. Critical alerts nécessitent l'entitlement Apple (rare).
     // Cf. zeet-notification-strategy §4 (bypass DND et focus).
-    // Son custom `incoming_order.caf` : si le fichier est absent du bundle,
-    // iOS joue le son par defaut sans crasher (logge un warning).
+    //
+    // Son : fichier custom si livre ([kHasCustomIncomingSound]) et present
+    // dans le bundle iOS, sinon on omet le parametre pour laisser iOS jouer
+    // le son par defaut. Une reference a un fichier absent pouvait suffire
+    // a faire echouer la notif sur certains devices.
     //
     // `threadIdentifier` : lorsque groupKey != null, iOS regroupe les notifs
     // du meme thread dans la notification-center stack. Cf. Phase 4.
@@ -478,7 +513,7 @@ class LocalNotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
-      sound: kIncomingOrderSoundIos,
+      sound: kHasCustomIncomingSound ? kIncomingOrderSoundIos : null,
       interruptionLevel: InterruptionLevel.timeSensitive,
       categoryIdentifier: kIosOrderCategoryId,
       threadIdentifier: groupKey,
@@ -609,6 +644,74 @@ class LocalNotificationService {
     } catch (e) {
       debugPrint('[LocalNotifService] cancel failed: $e');
     }
+  }
+
+  /// Affiche une notification locale pour une **transition de commande**
+  /// (rider_assigned, cancelled, delivered, otp.updated…) recue en background.
+  ///
+  /// Sans ce relais local, quand l'app est killed, le FCM background handler
+  /// tournait mais ne montrait AUCUNE notif pour les transitions critiques
+  /// (seul `order.created` avait un FSI). Resultat : au retour foreground,
+  /// l'utilisateur voit l'etat stale jusqu'au prochain refresh manuel — le
+  /// bug "le refresh partner n'est pas toujours effectif".
+  ///
+  /// Canal `zeet_partner_orders` (importance HIGH, pas de FSI) : son discret,
+  /// vibration courte, tap-to-open sur OrderDetailsScreen via le payload.
+  /// N'affiche PAS une alerte comme une nouvelle commande — c'est une
+  /// information de suivi, pas une interruption d'action.
+  static Future<void> showOrderUpdate({
+    required String title,
+    required String body,
+    required Map<String, dynamic> payloadData,
+  }) async {
+    if (!_initialized) await init();
+
+    // Offset par orderId pour que les updates de commandes differentes
+    // coexistent (pas d'ecrasement). Fallback sur le base id si pas d'id
+    // dans le payload (improbable mais on reste defensif).
+    final orderIdRaw =
+        payloadData['order_id'] ?? payloadData['entity_id'] ?? payloadData['id'];
+    final int? orderId = orderIdRaw is int
+        ? orderIdRaw
+        : int.tryParse(orderIdRaw?.toString() ?? '');
+    final int notificationId = orderId != null
+        ? kOrderUpdateNotificationIdBase + (orderId % 60000)
+        : kOrderUpdateNotificationIdBase;
+
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+      kOrderUpdateChannelId,
+      kOrderUpdateChannelName,
+      channelDescription: kOrderUpdateChannelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.status,
+      playSound: true,
+      enableVibration: true,
+      autoCancel: true,
+      visibility: NotificationVisibility.public,
+      color: Color(0xFFFF5A1F),
+      colorized: true,
+    );
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.active,
+      categoryIdentifier: kIosOrderCategoryId,
+    );
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _plugin.show(
+      notificationId,
+      title,
+      body,
+      details,
+      payload: jsonEncode(payloadData),
+    );
   }
 
   /// Affiche une notification quand une action queued (sync offline) echoue

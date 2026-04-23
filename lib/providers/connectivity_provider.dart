@@ -24,3 +24,11 @@ final connectivityStatusProvider = StreamProvider<bool>((ref) {
   ref.onDispose(zc.dispose);
   return zc.stream;
 });
+
+/// Raccourci synchrone : retourne `true` si online, ou `true` par defaut
+/// tant que le stream n'a pas encore emis (fail-open — on ne bloque jamais
+/// l'utilisateur sur un faux positif au boot).
+final isOnlineProvider = Provider<bool>((ref) {
+  final async = ref.watch(connectivityStatusProvider);
+  return async.valueOrNull ?? true;
+});

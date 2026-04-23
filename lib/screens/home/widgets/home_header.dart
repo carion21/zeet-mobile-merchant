@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +9,6 @@ import 'package:merchant/providers/notifications_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/screens/notifications/index.dart';
 import 'package:merchant/screens/root/index.dart';
-import 'package:merchant/services/incoming_order_dispatcher.dart';
 import 'package:merchant/services/navigation_service.dart';
 
 /// Header du home : avatar resto + nom + toggle ouvert/ferme + menu/cloche.
@@ -84,29 +82,10 @@ class HomeHeader extends ConsumerWidget {
                 ),
               ),
 
-              // Actions a droite : (dev) test incoming order + cloche
+              // Actions a droite : cloche notifications.
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Dev-only : declenche l'ecran "nouvelle commande" avec un
-                  // payload bidon. Masque en release.
-                  if (kDebugMode)
-                    IconButton(
-                      tooltip: 'Tester nouvelle commande (dev)',
-                      onPressed: () =>
-                          IncomingOrderDispatcher.triggerDev(ref),
-                      icon: Icon(
-                        Icons.flash_on_rounded,
-                        color: AppColors.primary,
-                        size: 24.r,
-                      ),
-                    ),
-                  IconButton(
-                    tooltip: 'Mon menu',
-                    onPressed: () => Routes.navigateTo(Routes.menu),
-                    icon: IconManager.getIcon('restaurant',
-                        color: textColor, size: 26.r),
-                  ),
                   IconButton(
                     tooltip: 'Notifications',
                     onPressed: () {
@@ -120,28 +99,32 @@ class HomeHeader extends ConsumerWidget {
                             color: textColor, size: 26.r),
                         if (unreadNotifications > 0)
                           Positioned(
-                            right: -2,
-                            top: -2,
+                            right: -6,
+                            top: -4,
                             child: Container(
-                              padding: EdgeInsets.all(4.r),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 5.w,
+                                vertical: 1.h,
                               ),
-                              constraints: BoxConstraints(
-                                  minWidth: 18.w, minHeight: 18.h),
-                              child: Center(
-                                child: Text(
-                                  unreadNotifications > 99
-                                      ? '99+'
-                                      : '$unreadNotifications',
-                                  // 12sp minimum (DS §3). 10sp illisible sur tablette.
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12.sp,
-                                    fontWeight: FontWeight.bold,
-                                    height: 1,
-                                  ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: scheme.surface,
+                                  width: 1.5,
+                                ),
+                              ),
+                              constraints: BoxConstraints(minWidth: 16.r),
+                              child: Text(
+                                unreadNotifications > 9
+                                    ? '9+'
+                                    : '$unreadNotifications',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10.sp,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
                                 ),
                               ),
                             ),

@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/utils/color_utils.dart';
 import 'package:merchant/core/utils/order_status_utils.dart';
+import 'package:merchant/core/widgets/order_code_text.dart';
 import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
 import 'package:merchant/core/widgets/preparation_timer.dart';
@@ -110,7 +112,7 @@ class HomeOrderCard extends ConsumerWidget {
     // Re-lock apres le sheet : l'API call qui suit doit aussi etre
     // protege des pushs incoming.
     IncomingOrderGestureLock.markInteraction();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final bool success =
         await notifier.cancel(order.id, cancelReason: reason);
     if (!context.mounted) return;
@@ -121,7 +123,8 @@ class HomeOrderCard extends ConsumerWidget {
       );
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final String? error = ref.read(orderDetailProvider).actionError;
+      final String? error =
+          ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
         context: context,
         message: error ?? 'Erreur lors de l\'annulation',
@@ -232,10 +235,11 @@ class _Header extends StatelessWidget {
           child: Row(
             children: <Widget>[
               Flexible(
-                child: Text(
-                  '#${order.code ?? order.id}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: OrderCodeText(
+                  // Affiche le code complet si la place le permet, sinon
+                  // `#…<9 derniers>` — le StatusBadge à droite peut consommer
+                  // la moitié de la ligne, le fallback évite l'ellipsis brut.
+                  code: order.code ?? '${order.id}',
                   style: TextStyle(
                     fontSize: 16.sp,
                     fontWeight: FontWeight.w600,
@@ -293,9 +297,16 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == null) return const SizedBox.shrink();
+    // Le backend peut renvoyer un `last_order_status` ou objet existe mais
+    // label ET value vides. Sans garde, la chip affichait juste le dot
+    // colore sans aucun texte (issue visuelle detail partner). On masque
+    // plutot que de montrer une chip vide — le dot couleur d'a cote sur
+    // la card suffit au glance.
+    final String raw = status!.displayLabel.trim();
+    if (raw.isEmpty) return const SizedBox.shrink();
     return ZeetStatusChip(
       status: partnerStatusFor(status!.value),
-      label: status!.displayLabel,
+      label: raw,
       dense: true,
     );
   }
@@ -470,7 +481,10 @@ class _CompactBody extends StatelessWidget {
     final Color textColor = scheme.onSurface;
     final Color textLightColor = scheme.onSurfaceVariant;
     final String statusValue = order.status;
-    final Color statusColor = _statusColor(statusValue);
+    // Couleur authoritative : hex renvoye par le core via `last_order_status.color`.
+    // Fallback neutre uniquement si le backend n'a pas fourni de couleur.
+    final Color statusColor =
+        order.orderStatus?.colorValue ?? ZeetColors.inkMuted;
     final IconData statusIcon = _statusIcon(statusValue);
     final String statusShort = _shortLabel(
       statusValue,
@@ -512,10 +526,11 @@ class _CompactBody extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     Flexible(
-                      child: Text(
-                        '#${order.code ?? order.id}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: OrderCodeText(
+                        // Row compacte (avatar · client · code · status · total).
+                        // Si le code tient, on l'affiche complet — sinon
+                        // `#…<9 derniers>`, ceux qu'on énonce au tel.
+                        code: order.code ?? '${order.id}',
                         style: TextStyle(
                           fontSize: 11.sp,
                           color: textLightColor,
@@ -559,32 +574,6 @@ class _CompactBody extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'pending':
-      case 'payment-accepted':
-        return ZeetColors.danger;
-      case 'confirmed':
-      case 'preparing':
-        return ZeetColors.warning;
-      case 'ready':
-      case 'ready-for-delivery':
-        return ZeetColors.success;
-      case 'picked_up':
-      case 'on-the-way':
-        return ZeetColors.info;
-      case 'awaiting-payment':
-        return ZeetColors.primary;
-      case 'canceled':
-      case 'cancelled':
-      case 'rejected':
-      case 'failed':
-        return ZeetColors.inkMuted;
-      default:
-        return ZeetColors.inkMuted;
-    }
   }
 
   IconData _statusIcon(String s) {
@@ -669,12 +658,22 @@ class _CardAction extends ConsumerWidget {
   }
 
   Widget? _buildContent(BuildContext context, WidgetRef ref) {
+    // Couleur pilotée par le statut cible (cf. skills neuro-ux & pos-
+    // ergonomics §6 "Statut au coup d'œil") : tout-vert désensibilise,
+    // donc le swipe prend la couleur du statut où la commande atterrira.
+    final Map<String, OrderStatusOption> statusMap =
+        ref.watch(orderStatusByValueProvider);
+
     switch (order.status) {
       case 'pending':
       case 'payment-accepted':
         return ZeetSwipeToConfirm(
           onConfirmed: () => _confirm(context, ref),
-          variant: ZeetSwipeConfirmVariant.positive,
+          fillColor: _resolveTargetColor(
+            statusMap,
+            'confirmed',
+            fallback: ZeetColors.info,
+          ),
           label: 'Glisser pour accepter',
           thresholdLabel: 'Relâchez pour accepter',
           confirmedLabel: 'Commande acceptée',
@@ -683,7 +682,11 @@ class _CardAction extends ConsumerWidget {
       case 'confirmed':
         return ZeetSwipeToConfirm(
           onConfirmed: () => _markPreparing(context, ref),
-          variant: ZeetSwipeConfirmVariant.positive,
+          fillColor: _resolveTargetColor(
+            statusMap,
+            'preparing',
+            fallback: ZeetColors.warning,
+          ),
           label: 'Glisser, on prépare',
           thresholdLabel: 'Relâchez pour démarrer',
           confirmedLabel: 'En préparation',
@@ -692,7 +695,11 @@ class _CardAction extends ConsumerWidget {
       case 'preparing':
         return ZeetSwipeToConfirm(
           onConfirmed: () => _markReady(context, ref),
-          variant: ZeetSwipeConfirmVariant.positive,
+          fillColor: _resolveTargetColor(
+            statusMap,
+            'ready',
+            fallback: ZeetColors.success,
+          ),
           label: 'Glisser, c\'est prêt',
           thresholdLabel: 'Relâchez, c\'est prêt',
           confirmedLabel: 'Prête pour le livreur',
@@ -707,18 +714,35 @@ class _CardAction extends ConsumerWidget {
     }
   }
 
+  /// Résout la couleur hex du statut cible depuis la map (source backend
+  /// `/v1/partner/orders/select/statuses`). Couvre la variante
+  /// `ready-for-delivery` que certains environnements servent à la place
+  /// de `ready`. Retombe sur [fallback] si la map n'est pas encore hydratée
+  /// ou si la couleur backend est invalide.
+  Color _resolveTargetColor(
+    Map<String, OrderStatusOption> map,
+    String value, {
+    required Color fallback,
+  }) {
+    final OrderStatusOption? option = map[value] ?? map['$value-for-delivery'];
+    final Color? parsed = hexToColor(option?.color);
+    return parsed ?? fallback;
+  }
+
   Future<void> _confirm(BuildContext context, WidgetRef ref) async {
     IncomingOrderGestureLock.markInteraction();
     ZeetHaptics.warning();
-    final bool success =
-        await ref.read(orderDetailProvider.notifier).confirm(order.id);
+    final bool success = await ref
+        .read(orderDetailProvider(order.id).notifier)
+        .confirm(order.id);
     if (!context.mounted) return;
     if (success) {
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final String? error = ref.read(orderDetailProvider).actionError;
+      final String? error =
+          ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
         context: context,
         message: error ?? 'Erreur lors de la confirmation',
@@ -729,15 +753,17 @@ class _CardAction extends ConsumerWidget {
   Future<void> _markPreparing(BuildContext context, WidgetRef ref) async {
     IncomingOrderGestureLock.markInteraction();
     ZeetHaptics.warning();
-    final bool success =
-        await ref.read(orderDetailProvider.notifier).markPreparing(order.id);
+    final bool success = await ref
+        .read(orderDetailProvider(order.id).notifier)
+        .markPreparing(order.id);
     if (!context.mounted) return;
     if (success) {
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Préparation lancée');
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final String? error = ref.read(orderDetailProvider).actionError;
+      final String? error =
+          ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }
@@ -745,8 +771,9 @@ class _CardAction extends ConsumerWidget {
   Future<void> _markReady(BuildContext context, WidgetRef ref) async {
     IncomingOrderGestureLock.markInteraction();
     ZeetHaptics.warning();
-    final bool success =
-        await ref.read(orderDetailProvider.notifier).markReady(order.id);
+    final bool success = await ref
+        .read(orderDetailProvider(order.id).notifier)
+        .markReady(order.id);
     if (!context.mounted) return;
     if (success) {
       HapticFeedback.heavyImpact();
@@ -756,7 +783,8 @@ class _CardAction extends ConsumerWidget {
       );
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final String? error = ref.read(orderDetailProvider).actionError;
+      final String? error =
+          ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }

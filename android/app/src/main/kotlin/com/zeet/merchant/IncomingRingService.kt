@@ -55,8 +55,10 @@ class IncomingRingService : Service() {
         // les notifs FSI quand le service natif s'affichait seul (app killed).
         // Bumper le suffixe ici ET dans LocalNotificationService si on
         // change le son ou l'importance — Android refuse de modifier
-        // un channel apres creation.
-        const val CHANNEL_ID = "zeet_partner_incoming_order_v3"
+        // un channel apres creation. `_v4` : retrait du son custom cote
+        // Dart (RawResource inexistante faisait dropper la notif sur
+        // certains OEMs).
+        const val CHANNEL_ID = "zeet_partner_incoming_order_v4"
         const val CHANNEL_NAME = "Nouvelles commandes"
         const val CHANNEL_DESC =
             "Alertes prioritaires avec sonnerie distincte pour les nouvelles commandes entrantes."
@@ -158,9 +160,11 @@ class IncomingRingService : Service() {
     }
 
     /**
-     * Recherche dynamiquement le fichier `res/raw/zeet_incoming` (n'importe
-     * quelle extension audio valide). Fallback en cascade sur des sons
-     * systeme si absent :
+     * Recherche dynamiquement le fichier `res/raw/incoming_order` (n'importe
+     * quelle extension audio valide). Nom aligne sur la constante Dart
+     * `kIncomingOrderSoundResource` (LocalNotificationService) — un seul
+     * fichier a poser pour couvrir les deux chemins (channel FSI + service
+     * natif). Fallback en cascade sur des sons systeme si absent :
      *   1. TYPE_RINGTONE — son d'appel entrant du tel (le plus reconnaissable,
      *      correspond au mental model "le telephone sonne")
      *   2. TYPE_ALARM — alarme systeme, loud, insistent (ignore DND)
@@ -169,13 +173,13 @@ class IncomingRingService : Service() {
      * Permet de ne pas casser le build avant que l'equipe ait drop son fichier.
      */
     private fun resolveSoundUri(): Uri {
-        val resId = resources.getIdentifier("zeet_incoming", "raw", packageName)
+        val resId = resources.getIdentifier("incoming_order", "raw", packageName)
         if (resId != 0) {
             return Uri.parse("android.resource://$packageName/$resId")
         }
         Log.w(
             TAG,
-            "zeet_incoming raw resource not found — falling back to system ringtone",
+            "incoming_order raw resource not found — falling back to system ringtone",
         )
         return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)

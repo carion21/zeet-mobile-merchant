@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 import 'package:merchant/core/constants/copy.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/models/payout_model.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/payout_provider.dart';
@@ -29,6 +30,7 @@ class PayoutsScreen extends ConsumerStatefulWidget {
 
 class _PayoutsScreenState extends ConsumerState<PayoutsScreen> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
 
   @override
   void initState() {
@@ -62,6 +64,12 @@ class _PayoutsScreenState extends ConsumerState<PayoutsScreen> {
     await ref.read(payoutsListProvider.notifier).refresh();
   }
 
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await _refresh();
+    _freshKey.currentState?.bump();
+  }
+
   @override
   Widget build(BuildContext context) {
     final PayoutsListState state = ref.watch(payoutsListProvider);
@@ -81,15 +89,31 @@ class _PayoutsScreenState extends ConsumerState<PayoutsScreen> {
 
     return Scaffold(
       backgroundColor: scheme.surface,
-      appBar: const ZeetAppBar(title: Text('Virements')),
+      appBar: ZeetAppBar(
+        title: const Text('Virements'),
+        actions: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(right: ZeetSpacing.x2),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _refreshAll,
         child: ZeetStateBuilder<List<Payout>>(
           data: hasAny ? state.payouts : null,
           isLoading: isLoading,
           error: error,
           isOffline: isOffline && !hasAny,
-          onRetry: () => ref.read(payoutsListProvider.notifier).refresh(),
+          onRetry: () async {
+            await ref.read(payoutsListProvider.notifier).refresh();
+            _freshKey.currentState?.bump();
+          },
           loading: const _PayoutsLoadingSkeleton(),
           emptyBuilder: () => ListView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -380,8 +404,12 @@ class _PayoutTile extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
 
-    final String statusLabel = payout.status?.label ?? 'Inconnu';
+    // Label : priorite au backend (`statusBadge.label`) puis enum local.
+    final String statusLabel =
+        payout.statusBadge?.label ?? payout.status?.label ?? 'Inconnu';
     final IconData icon = _iconFor(payout.status);
+    // Couleur authoritative depuis le badge backend, fallback neutre.
+    final Color iconColor = payout.statusColor ?? ZeetColors.inkMuted;
 
     return ZeetCard(
       variant: ZeetCardVariant.outlined,
@@ -394,17 +422,19 @@ class _PayoutTile extends StatelessWidget {
       child: Row(
         children: <Widget>[
           // Icone de statut (slot 40x40pt, glanceability POS §6).
+          // Le tint provient du badge backend : la pastille signale
+          // l'etat au coup d'oeil avant meme de lire le chip.
           Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: ZeetRadius.brSm,
             ),
             child: Icon(
               icon,
               size: 20,
-              color: scheme.onSurface,
+              color: iconColor,
               semanticLabel: statusLabel,
             ),
           ),

@@ -42,7 +42,10 @@ class HomeCompactStats extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Traitées aujourd\'hui',
+                  // "Du jour" et non "aujourd'hui" — le compteur suit la
+                  // journee commerciale (cutoff 04h par defaut), pas
+                  // minuit civil. Cf. `docs/PARTNER_BUSINESS_DAY.md`.
+                  'Traitées du jour',
                   style: TextStyle(
                     color: textLightColor,
                     fontSize: 12.sp,

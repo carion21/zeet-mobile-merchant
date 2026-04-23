@@ -35,12 +35,15 @@ class ProfileHeader extends ConsumerWidget {
         .toUpperCase();
     if (initials.isEmpty) initials = 'MR';
 
+    // Densite partner POS (design-system §4) : avatar 72pt, typo compacte,
+    // gaps 8-10. Le header ne doit pas voler la moitie de l'ecran —
+    // l'info qui interesse le partner c'est ses stats et ses actions, pas
+    // son propre nom en gros (il sait qui il est).
     return Column(
       children: <Widget>[
-        // Avatar avec initiales ou photo
         Container(
-          width: 100.w,
-          height: 100.h,
+          width: 72.w,
+          height: 72.h,
           decoration: const BoxDecoration(
             color: ZeetColors.primary,
             shape: BoxShape.circle,
@@ -49,15 +52,15 @@ class ProfileHeader extends ConsumerWidget {
               ? ClipOval(
                   child: ZeetImage(
                     url: logoUrl,
-                    width: 100.w,
-                    height: 100.h,
+                    width: 72.w,
+                    height: 72.h,
                     fit: BoxFit.cover,
                     errorWidget: Center(
                       child: Text(
                         initials,
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 32.sp,
+                          fontSize: 24.sp,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -69,44 +72,51 @@ class ProfileHeader extends ConsumerWidget {
                     initials,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 32.sp,
+                      fontSize: 24.sp,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
         ),
-        SizedBox(height: 16.h),
+        SizedBox(height: 10.h),
 
-        // Nom du restaurant
+        // Nom du restaurant — max 2 lignes pour eviter l'overflow sur
+        // les noms longs (ex: "Le Palmier Moussa de Bingerville").
         Text(
           displayName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: textColor,
-            fontSize: 20.sp,
-            fontWeight: FontWeight.bold,
+            fontSize: 17.sp,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
           ),
         ),
 
-        // Numero de telephone
-        SizedBox(height: 4.h),
+        SizedBox(height: 2.h),
         Text(
           displayPhone,
           style: TextStyle(
             color: ZeetColors.primary,
-            fontSize: 16.sp,
-            fontWeight: FontWeight.w500,
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w600,
           ),
         ),
 
-        // Adresse si disponible
         if (partnerProfile?.address != null ||
             partner?.partner?.address != null) ...<Widget>[
-          SizedBox(height: 4.h),
+          SizedBox(height: 2.h),
           Text(
             partnerProfile?.address ?? partner!.partner!.address!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: textColor.withValues(alpha: 0.7),
-              fontSize: 13.sp,
+              color: textColor.withValues(alpha: 0.65),
+              fontSize: 12.sp,
+              height: 1.3,
             ),
           ),
         ],

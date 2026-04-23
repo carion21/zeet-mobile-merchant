@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/constants/assets.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/widgets/business_day_label.dart';
+import 'package:merchant/models/business_day_window.dart';
 import 'package:merchant/screens/root/index.dart';
 
 /// Card "Gains du jour" avec fond wallet + rolling counter anime.
@@ -15,10 +17,16 @@ class HomeEarningsCard extends ConsumerWidget {
     super.key,
     required this.earnings,
     required this.isDark,
+    this.businessDay,
   });
 
   final double earnings;
   final bool isDark;
+
+  /// Fenetre de journee commerciale active (cutoff 04h par defaut).
+  /// Quand fournie, affiche "Depuis 04h00 · reinit dans Xh Ymin" sous le
+  /// montant pour expliquer que le compteur ne suit plus minuit civil.
+  final BusinessDayWindow? businessDay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,6 +89,17 @@ class HomeEarningsCard extends ConsumerWidget {
                           ),
                         ),
                       ),
+                      if (businessDay != null) ...<Widget>[
+                        SizedBox(height: 8.h),
+                        BusinessDayLabel(
+                          businessDay: businessDay!,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

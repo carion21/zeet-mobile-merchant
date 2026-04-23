@@ -4,6 +4,10 @@
 // Le parsing est DEFENSIF : chaque champ qui peut etre un objet ou un int/string
 // est traite de maniere flexible (meme pattern que l'app client).
 
+import 'package:flutter/material.dart';
+
+import 'package:merchant/core/utils/color_utils.dart';
+
 /// Statut d'une commande (objet riche renvoye par l'API).
 /// `last_order_status` peut etre un objet `{id, label, value, color}`, un int, ou un string.
 class OrderStatus {
@@ -28,6 +32,11 @@ class OrderStatus {
   /// Raccourci pour affichage.
   String get displayLabel => label ?? value ?? '';
   String get displayValue => value ?? '';
+
+  /// Couleur parsee depuis [color] (`#RRGGBB` fourni par le core).
+  /// `null` si le backend n'a pas envoye de couleur — l'UI doit alors
+  /// fallback sur un neutre (`ZeetColors.inkMuted`).
+  Color? get colorValue => hexToColor(color);
 
   @override
   String toString() => value ?? label ?? '';
@@ -274,35 +283,47 @@ class OrderItem {
   }
 }
 
-/// Log d'activite d'une commande (historique des changements de statut).
+/// Entree d'historique d'une commande : un changement de statut horodate,
+/// eventuellement accompagne d'une observation libre cote backend.
+///
+/// Payload backend (cf. `GET /v1/partner/orders/:id` → `data.logs[]`) :
+/// ```json
+/// {
+///   "id": 4948,
+///   "date_created": "2026-04-21T03:42:43.630Z",
+///   "observation": "Confirmed with estimated 30 minutes",
+///   "order_status": { "id": 4, "label": "Confirmee", "value": "confirmed", "color": "#2563EB" }
+/// }
+/// ```
+///
+/// La couleur d'affichage provient du backend (`order_status.color`) —
+/// ne jamais mapper un statut vers une couleur cote Flutter (cf.
+/// memoire `status_colors_from_core`).
 class OrderLog {
   final int? id;
-  final String? action;
-  final String? description;
-  final String? fromStatus;
-  final String? toStatus;
-  final String? performedBy;
+  final OrderStatus? orderStatus;
+  final String? observation;
   final String? createdAt;
 
   const OrderLog({
     this.id,
-    this.action,
-    this.description,
-    this.fromStatus,
-    this.toStatus,
-    this.performedBy,
+    this.orderStatus,
+    this.observation,
     this.createdAt,
   });
 
   factory OrderLog.fromJson(Map<String, dynamic> json) {
+    OrderStatus? status;
+    final raw = json['order_status'];
+    if (raw is Map<String, dynamic>) {
+      status = OrderStatus.fromJson(raw);
+    }
     return OrderLog(
       id: json['id'] as int?,
-      action: json['action'] as String?,
-      description: json['description'] as String?,
-      fromStatus: json['from_status'] as String?,
-      toStatus: json['to_status'] as String?,
-      performedBy: json['performed_by'] as String?,
-      createdAt: json['created_at'] as String? ?? json['date_created'] as String?,
+      orderStatus: status,
+      observation: json['observation'] as String?,
+      createdAt:
+          json['date_created'] as String? ?? json['created_at'] as String?,
     );
   }
 }
@@ -342,6 +363,77 @@ class OrderPosition {
   }
 }
 
+/// Timings operationnels calcules par le backend (cf. `GET /v1/partner/orders/:id`
+/// → `data.timings`). Agrege les horodatages des transitions cles et les
+/// durees breakdown entre chaque phase en secondes.
+///
+/// Source de verite pour les KPI de service cote partner :
+/// - `acceptanceSeconds` : `pending → confirmed` (temps de reponse du partner)
+/// - `preparationSeconds` : `confirmed → ready-for-delivery` (temps en cuisine)
+/// - `pickupWaitSeconds` : `ready → picked_up` (attente rider a la cuisine)
+/// - `transitSeconds` : `picked_up → delivered` (trajet rider)
+/// - `totalSeconds` : `pending → delivered` (cycle complet)
+///
+/// Les timestamps bruts (`*_at`) permettent a l'UI de dater chaque phase
+/// sans avoir a deduire depuis les logs.
+class OrderTimings {
+  final String? pendingAt;
+  final String? confirmedAt;
+  final String? readyAt;
+  final String? pickedUpAt;
+  final String? deliveredAt;
+  final int? acceptanceSeconds;
+  final int? preparationSeconds;
+  final int? pickupWaitSeconds;
+  final int? transitSeconds;
+  final int? totalSeconds;
+
+  const OrderTimings({
+    this.pendingAt,
+    this.confirmedAt,
+    this.readyAt,
+    this.pickedUpAt,
+    this.deliveredAt,
+    this.acceptanceSeconds,
+    this.preparationSeconds,
+    this.pickupWaitSeconds,
+    this.transitSeconds,
+    this.totalSeconds,
+  });
+
+  factory OrderTimings.fromJson(Map<String, dynamic> json) {
+    int? toInt(dynamic v) {
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v.trim());
+      return null;
+    }
+
+    return OrderTimings(
+      pendingAt: json['pending_at'] as String?,
+      confirmedAt: json['confirmed_at'] as String?,
+      readyAt: json['ready_at'] as String?,
+      pickedUpAt: json['picked_up_at'] as String?,
+      deliveredAt: json['delivered_at'] as String?,
+      acceptanceSeconds: toInt(json['acceptance_seconds']),
+      preparationSeconds: toInt(json['preparation_seconds']),
+      pickupWaitSeconds: toInt(json['pickup_wait_seconds']),
+      transitSeconds: toInt(json['transit_seconds']),
+      totalSeconds: toInt(json['total_seconds']),
+    );
+  }
+
+  /// Vrai si au moins une phase est renseignee (evite d'afficher une card
+  /// vide quand le backend n'a pas encore calcule les durees, p.ex. pour
+  /// une commande en cours qui n'a pas atteint la premiere transition).
+  bool get hasAnyBreakdown =>
+      acceptanceSeconds != null ||
+      preparationSeconds != null ||
+      pickupWaitSeconds != null ||
+      transitSeconds != null;
+}
+
 /// Une commande complete telle que retournee par l'API partner.
 class Order {
   final int id;
@@ -372,6 +464,7 @@ class Order {
   final String? cancelledAt;
   final String? pickupOtp;
   final List<OrderLog> logs;
+  final OrderTimings? timings;
   final String? createdAt;
   final String? updatedAt;
 
@@ -404,6 +497,7 @@ class Order {
     this.cancelledAt,
     this.pickupOtp,
     this.logs = const [],
+    this.timings,
     this.createdAt,
     this.updatedAt,
   });
@@ -412,7 +506,18 @@ class Order {
   String get status => statusValue ?? orderStatus?.value ?? '';
   String get statusLabel => orderStatus?.label ?? status;
   String get statusColor => orderStatus?.color ?? '#808080';
-  String get customerName => customer?.fullName ?? 'Client #$customerId';
+
+  /// Nom du client. Priorite : `customer.fullName` (embed backend) > simple
+  /// "Client" lisible. On n'expose PLUS l'id technique "Client #5" dans
+  /// l'UI — l'id n'aide pas le partner et pollue l'ecran (issue M-22).
+  /// Si le backend n'embed pas le `customer` dans /orders/:id, il faut
+  /// l'ajouter cote backend plutot qu'afficher un id brut cote UI.
+  String get customerName {
+    final String full = customer?.fullName.trim() ?? '';
+    if (full.isNotEmpty) return full;
+    return 'Client';
+  }
+
   String get customerPhone => customer?.phone ?? '';
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -426,8 +531,13 @@ class Order {
     } else if (statusRaw is String) {
       statusValue = statusRaw;
     } else if (statusRaw is int) {
+      // `last_order_status` renvoye comme simple id (cas des endpoints
+      // POST /confirm|preparing|ready|cancel). On garde l'id pour le lien
+      // backend mais on laisse `statusValue` null : synthetiser un slug
+      // type "status-5" le fait remonter tel quel dans la chip via le
+      // fallback UI (`_fallbackStatusLabel`). L'enrichissement (label,
+      // color, value) viendra d'un refetch silencieux cote provider.
       orderStatus = OrderStatus(id: statusRaw);
-      statusValue = 'status-$statusRaw';
     }
 
     // customer peut etre un objet ou un int
@@ -488,6 +598,12 @@ class Order {
           .whereType<Map<String, dynamic>>()
           .map((l) => OrderLog.fromJson(l))
           .toList();
+    }
+
+    // timings (uniquement sur GET /v1/partner/orders/:id, pas sur la liste)
+    OrderTimings? timings;
+    if (json['timings'] is Map<String, dynamic>) {
+      timings = OrderTimings.fromJson(json['timings'] as Map<String, dynamic>);
     }
 
     // position (peut etre injectee depuis le detail)
@@ -553,6 +669,7 @@ class Order {
       cancelledAt: json['cancelled_at'] as String?,
       pickupOtp: json['pickup_otp'] as String?,
       logs: logs,
+      timings: timings,
       createdAt: json['date_created'] as String? ?? json['created_at'] as String?,
       updatedAt: json['date_updated'] as String? ?? json['updated_at'] as String?,
     );

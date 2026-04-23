@@ -1,6 +1,34 @@
 // Modeles representant les tickets de support partner.
 // Correspond aux reponses de `/v1/partner/tickets/*`.
 
+import 'package:flutter/material.dart';
+
+import 'package:merchant/core/utils/color_utils.dart';
+
+/// Objet riche `{id, label, value, color}` renvoye par le core pour les
+/// champs status / priority d'un ticket. Porte la couleur `#RRGGBB` cote
+/// serveur afin que l'UI n'ait pas a dupliquer les mappings.
+class TicketBadge {
+  final int? id;
+  final String? label;
+  final String? value;
+  final String? color;
+
+  const TicketBadge({this.id, this.label, this.value, this.color});
+
+  factory TicketBadge.fromJson(Map<String, dynamic> json) {
+    return TicketBadge(
+      id: json['id'] as int?,
+      label: json['label'] as String?,
+      value: json['value'] as String?,
+      color: json['color'] as String?,
+    );
+  }
+
+  /// Couleur parsee depuis le hex backend, `null` si absent/invalide.
+  Color? get colorValue => hexToColor(color);
+}
+
 /// Statut d'un ticket.
 ///
 /// Mappings sur les statuts backend les plus courants :
@@ -135,6 +163,14 @@ class Ticket {
   final String? description;
   final TicketStatus status;
   final TicketPriority priority;
+
+  /// Badge riche `{id,label,value,color}` renvoye par le backend pour
+  /// `status`. Source de couleur primaire pour l'UI — evite les mappings
+  /// statut → Color hardcodes cote frontend.
+  final TicketBadge? statusBadge;
+
+  /// Badge riche pour `priority`. Meme usage que [statusBadge].
+  final TicketBadge? priorityBadge;
   final int? orderId;
   final String? orderCode;
   final int unreadCount;
@@ -150,6 +186,8 @@ class Ticket {
     this.description,
     this.status = TicketStatus.unknown,
     this.priority = TicketPriority.normal,
+    this.statusBadge,
+    this.priorityBadge,
     this.orderId,
     this.orderCode,
     this.unreadCount = 0,
@@ -170,13 +208,38 @@ class Ticket {
       orderId = rawOrder;
     }
 
+    // `status` peut etre un String (legacy) OU un objet `{id,label,value,color}`
+    // selon la version backend. On stocke les deux formes : l'enum pour la
+    // state-machine frontend, le badge pour la couleur/label riches.
+    String? statusRawValue;
+    TicketBadge? statusBadge;
+    final dynamic rawStatus = json['status'];
+    if (rawStatus is Map<String, dynamic>) {
+      statusBadge = TicketBadge.fromJson(rawStatus);
+      statusRawValue = statusBadge.value;
+    } else if (rawStatus is String) {
+      statusRawValue = rawStatus;
+    }
+
+    String? priorityRawValue;
+    TicketBadge? priorityBadge;
+    final dynamic rawPriority = json['priority'];
+    if (rawPriority is Map<String, dynamic>) {
+      priorityBadge = TicketBadge.fromJson(rawPriority);
+      priorityRawValue = priorityBadge.value;
+    } else if (rawPriority is String) {
+      priorityRawValue = rawPriority;
+    }
+
     return Ticket(
       id: json['id'] as int? ?? 0,
       code: json['code'] as String?,
       title: (json['title'] as String?) ?? 'Sans titre',
       description: json['description'] as String?,
-      status: TicketStatusX.fromString(json['status'] as String?),
-      priority: TicketPriorityX.fromString(json['priority'] as String?),
+      status: TicketStatusX.fromString(statusRawValue),
+      priority: TicketPriorityX.fromString(priorityRawValue),
+      statusBadge: statusBadge,
+      priorityBadge: priorityBadge,
       orderId: orderId ?? json['order_id'] as int?,
       orderCode: orderCode,
       unreadCount: json['unread_count'] as int? ??
@@ -193,6 +256,7 @@ class Ticket {
     int? unreadCount,
     int? messagesCount,
     TicketStatus? status,
+    TicketBadge? statusBadge,
   }) {
     return Ticket(
       id: id,
@@ -201,6 +265,8 @@ class Ticket {
       description: description,
       status: status ?? this.status,
       priority: priority,
+      statusBadge: statusBadge ?? this.statusBadge,
+      priorityBadge: priorityBadge,
       orderId: orderId,
       orderCode: orderCode,
       unreadCount: unreadCount ?? this.unreadCount,

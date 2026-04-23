@@ -17,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/category_model.dart';
 import 'package:merchant/models/product_model.dart';
@@ -42,6 +43,8 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +52,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       ref.read(productDetailProvider.notifier).load(widget.productId);
       ref.invalidate(categoriesSelectProvider);
     });
+  }
+
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await ref.read(productDetailProvider.notifier).load(widget.productId);
+    _freshKey.currentState?.bump();
   }
 
   @override
@@ -60,6 +69,17 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       backgroundColor: scheme.surface,
       appBar: ZeetAppBar(
         title: Text(state.product?.name ?? 'Produit'),
+        actions: <Widget>[
+          Padding(
+            padding: EdgeInsets.only(right: 4.w),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
+            ),
+          ),
+        ],
       ),
       body: _buildBody(state),
     );
@@ -86,9 +106,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           );
         }
         return RefreshIndicator(
-          onRefresh: () => ref
-              .read(productDetailProvider.notifier)
-              .load(widget.productId),
+          onRefresh: _refreshAll,
           child: ListView(
             padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 32.h),
             children: <Widget>[

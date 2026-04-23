@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
 import 'package:merchant/providers/auth_provider.dart';
@@ -95,28 +94,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: ZeetAppBar(
-        title: const Text('Mon Profil'),
+        title: const Text('Mon profil'),
         actions: <Widget>[
-          if (!isEditing)
-            IconButton(
-              icon: IconManager.getIcon('edit', color: textColor),
-              tooltip: 'Modifier le profil',
-              onPressed: () {
-                setState(() {
-                  isEditing = true;
-                });
-              },
-            )
-          else
-            IconButton(
-              icon: IconManager.getIcon('close', color: textColor),
-              tooltip: 'Annuler la modification',
-              onPressed: () {
-                setState(() {
-                  isEditing = false;
-                });
-              },
-            ),
+          IconButton(
+            icon: Icon(isEditing ? Icons.close_rounded : Icons.edit_outlined),
+            tooltip: isEditing ? 'Annuler' : 'Modifier',
+            onPressed: () {
+              ZeetHaptics.tap();
+              setState(() => isEditing = !isEditing);
+            },
+          ),
         ],
       ),
       body: SafeArea(
@@ -139,30 +126,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             );
           },
           builder: (PartnerData _) {
+            // Densite POS partner (design-system §4) : padding ecran 16
+            // (au lieu de 20) + gaps 14 (au lieu de 24/32). Reduit de
+            // ~25% la surface perdue sans rogner la lisibilite.
             return SingleChildScrollView(
-              child: Padding(
-                padding: EdgeInsets.all(20.w),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: <Widget>[
-                    ProfileHeader(textColor: textColor),
-                    SizedBox(height: 24.h),
-                    ProfileStatsCard(
-                      textColor: textColor,
-                      textLightColor: textLightColor,
-                      surfaceColor: surfaceColor,
-                      isDark: isDark,
-                    ),
-                    SizedBox(height: 24.h),
-                    ProfileOptionsSection(
-                      textColor: textColor,
-                      textLightColor: textLightColor,
-                      surfaceColor: surfaceColor,
-                    ),
-                    SizedBox(height: 32.h),
-                    _LogoutButton(onLogout: _confirmLogout),
-                  ],
-                ),
+              padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 24.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  ProfileHeader(textColor: textColor),
+                  SizedBox(height: 16.h),
+                  ProfileStatsCard(
+                    textColor: textColor,
+                    textLightColor: textLightColor,
+                    surfaceColor: surfaceColor,
+                    isDark: isDark,
+                  ),
+                  SizedBox(height: 16.h),
+                  ProfileOptionsSection(
+                    textColor: textColor,
+                    textLightColor: textLightColor,
+                    surfaceColor: surfaceColor,
+                  ),
+                  SizedBox(height: 18.h),
+                  _LogoutButton(onLogout: _confirmLogout),
+                ],
               ),
             );
           },

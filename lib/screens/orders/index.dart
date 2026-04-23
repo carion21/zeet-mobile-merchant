@@ -12,6 +12,7 @@ import 'package:merchant/core/widgets/preparation_timer.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
+import 'package:merchant/core/widgets/order_code_text.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/services/navigation_service.dart';
@@ -182,20 +183,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         actions: <Widget>[
           IconButton(
             tooltip: _searchActive ? 'Fermer la recherche' : 'Rechercher',
-            // Hit target 48pt (POS §1 + Fitts). Icône qui morph entre
-            // search/close — signal d'état clair sans rebuild du title.
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              transitionBuilder: (Widget c, Animation<double> a) =>
-                  ScaleTransition(scale: a, child: c),
-              child: Icon(
-                _searchActive
-                    ? Icons.close_rounded
-                    : Icons.search_rounded,
-                key: ValueKey<bool>(_searchActive),
-                color: textColor,
-                size: 24.r,
-              ),
+            icon: Icon(
+              _searchActive ? Icons.close_rounded : Icons.search_rounded,
             ),
             onPressed: _toggleSearch,
           ),
@@ -420,7 +409,11 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final String timeAgo = _getTimeAgo(order.createdAt);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget? inlineActions = _buildInlineActionsForStatus(order);
-    final (Color stripColor, Color stripText) = _stripColorsFor(order.status);
+    // Couleur authoritative depuis `last_order_status.color` backend.
+    // Le dot + bordure + label partagent la meme teinte — le contraste
+    // du texte reste lisible sur fond `alpha 0.08` (assure par le core).
+    final Color stripColor =
+        order.orderStatus?.colorValue ?? ZeetColors.inkMuted;
     final bool isOngoing =
         order.status == 'confirmed' || order.status == 'preparing';
     final String statusLabel =
@@ -477,7 +470,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                       style: TextStyle(
                         fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
-                        color: stripText,
+                        color: stripColor,
                         letterSpacing: 0.2,
                       ),
                     ),
@@ -639,39 +632,24 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     );
   }
 
-  /// Couleurs du status strip — même palette que `partnerStatusFor` mais
-  /// retourne directement (background ink color, foreground text color).
-  (Color, Color) _stripColorsFor(String? statusValue) {
-    switch (statusValue) {
-      case 'pending':
-      case 'confirmed':
-      case 'preparing':
-        return (ZeetColors.warningText, ZeetColors.warningText);
-      case 'ready':
-      case 'delivered':
-        return (ZeetColors.successText, ZeetColors.successText);
-      case 'picked_up':
-        return (ZeetColors.infoText, ZeetColors.infoText);
-      case 'cancelled':
-      case 'rejected':
-        return (ZeetColors.dangerText, ZeetColors.dangerText);
-      default:
-        return (ZeetColors.inkMuted, ZeetColors.inkMuted);
-    }
-  }
-
   /// Fallback si `orderStatus` objet est null mais qu'on a la string.
+  /// Traite `null` ET `''` comme "inconnu" — le backend peut renvoyer
+  /// une chaine vide pour des commandes freshly created, sans cette
+  /// garde la chip affichait juste le dot sans label.
   String _fallbackStatusLabel(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Statut inconnu';
     switch (value) {
       case 'pending':
         return 'En attente';
       case 'confirmed':
+      case 'payment-accepted':
         return 'Confirmée';
       case 'preparing':
         return 'En préparation';
       case 'ready':
         return 'Prête';
       case 'picked_up':
+      case 'on-the-way':
         return 'En livraison';
       case 'delivered':
         return 'Livrée';
@@ -680,20 +658,20 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       case 'rejected':
         return 'Refusée';
       default:
-        return value ?? '—';
+        return value;
     }
   }
 
   Future<void> _confirmOrder(Order order) async {
     ZeetHaptics.warning();
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
       HapticFeedback.heavyImpact();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
           context: context, message: error ?? 'Erreur lors de la confirmation');
     }
@@ -706,7 +684,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final reason = await showCancelReasonSheet(context);
     if (reason == null || !mounted) return;
 
-    final notifier = ref.read(orderDetailProvider.notifier);
+    final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success =
         await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
@@ -714,7 +692,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       AppToast.showWarning(context: context, message: 'Commande refusée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(
           context: context, message: error ?? 'Erreur lors de l\'annulation');
     }
@@ -723,7 +701,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   Future<void> _markPreparing(Order order) async {
     ZeetHaptics.warning();
     final success = await ref
-        .read(orderDetailProvider.notifier)
+        .read(orderDetailProvider(order.id).notifier)
         .markPreparing(order.id);
     if (!mounted) return;
     if (success) {
@@ -732,15 +710,16 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
           context: context, message: 'Préparation lancée');
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }
 
   Future<void> _markReady(Order order) async {
     ZeetHaptics.warning();
-    final success =
-        await ref.read(orderDetailProvider.notifier).markReady(order.id);
+    final success = await ref
+        .read(orderDetailProvider(order.id).notifier)
+        .markReady(order.id);
     if (!mounted) return;
     if (success) {
       HapticFeedback.heavyImpact();
@@ -750,7 +729,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
       );
       ref.read(ordersListProvider.notifier).refresh();
     } else {
-      final error = ref.read(orderDetailProvider).actionError;
+      final error = ref.read(orderDetailProvider(order.id)).actionError;
       AppToast.showError(context: context, message: error ?? 'Erreur');
     }
   }
@@ -1074,6 +1053,10 @@ class _OrderCodeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Le chip partage sa Row avec le nombre d'articles. `OrderCodeText`
+    // affiche le code complet si ça rentre, sinon `#…<9 derniers>`. Le tap
+    // copie TOUJOURS le code complet pour que le support matche sans
+    // ambiguïté, même si le display est raccourci.
     return Semantics(
       button: true,
       label: 'Code commande $code, toucher pour copier',
@@ -1104,10 +1087,8 @@ class _OrderCodeChip extends StatelessWidget {
                 ),
                 SizedBox(width: 4.w),
                 Flexible(
-                  child: Text(
-                    code,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: OrderCodeText(
+                    code: code,
                     style: TextStyle(
                       fontSize: 12.sp,
                       fontWeight: FontWeight.w700,

@@ -14,6 +14,9 @@ import 'package:merchant/providers/sync_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:merchant/providers/ticket_provider.dart';
+import 'package:merchant/providers/notifications_provider.dart';
+import 'package:merchant/providers/wallet_provider.dart';
+import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/services/deep_link_handler.dart';
 import 'package:merchant/services/fcm_service.dart';
 import 'package:merchant/services/incoming_order_grouper.dart';
@@ -158,28 +161,90 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
           // sans ca l'app restait avec des donnees stale tant que l'user ne
           // faisait pas un pull-to-refresh manuel. Cible tous les events
           // order.* (created/updated/cancelled/delivered/otp.updated/…)
-          // et le group orders.group. Les erreurs sont swallowees : certains
-          // providers peuvent ne pas etre encore mountes (cold-start).
+          // et le group orders.group. On logue les erreurs au lieu de les
+          // avaler : sans log on ne peut pas diagnostiquer un refresh qui
+          // echoue (cold-start, session expiree, network flaky).
           if (type.startsWith('order.') || type == 'new_order' ||
               type == 'orders.group') {
             try {
               ref.read(ordersListProvider.notifier).refresh();
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('[FCM.refresh] ordersList failed: $e');
+            }
             try {
               ref.read(dashboardProvider.notifier).refresh();
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('[FCM.refresh] dashboard failed: $e');
+            }
+            // Si l'ecran OrderDetailsScreen est ouvert sur la commande qui
+            // vient de transitionner (rider picked_up / delivered / annulation
+            // admin), on recharge le detail sans attendre un pull-to-refresh.
+            // Sinon l'user voit un statut stale tant qu'il reste sur la vue.
+            // Avec orderDetailProvider en .family, chaque commande a son
+            // notifier dedie : pas de race entre deux FCM simultanes.
+            try {
+              final orderIdRaw =
+                  data['order_id'] ?? data['entity_id'] ?? data['id'];
+              final orderId = orderIdRaw is int
+                  ? orderIdRaw
+                  : int.tryParse(orderIdRaw?.toString() ?? '');
+              if (orderId != null) {
+                ref
+                    .read(orderDetailProvider(orderId).notifier)
+                    .load(orderId);
+              } else {
+                debugPrint(
+                  '[FCM.refresh] orderDetail skipped: no order_id in '
+                  'payload (type=$type, keys=${data.keys.toList()})',
+                );
+              }
+            } catch (e) {
+              debugPrint('[FCM.refresh] orderDetail failed: $e');
+            }
+            // Wallet : le solde est credite cote backend quand une commande
+            // est livree. Recharger le balance evite d'afficher un montant
+            // obsolete si l'user ouvre le wallet juste apres.
+            try {
+              ref.read(walletProvider.notifier).loadBalance();
+            } catch (e) {
+              debugPrint('[FCM.refresh] wallet failed: $e');
+            }
           }
 
           // Auto-refresh liste tickets sur support.* (message/mention/status/
           // ticket_opened) : le badge "non-lu" et l'ordre de la liste changent
           // des que le backend pousse une nouvelle activite sur un ticket.
-          // Contract §4.2-4.5. Si TicketDetailScreen est ouvert sur l'id
-          // concerne, il sera refresh via son propre initState au push
-          // (DeepLinkHandler.handle → Routes.push nouvelle instance).
+          // Contract §4.2-4.5.
           if (type.startsWith('support.')) {
             try {
               ref.read(ticketsListProvider.notifier).refresh();
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('[FCM.refresh] ticketsList failed: $e');
+            }
+            // Si TicketDetailScreen est deja ouvert sur l'id concerne, son
+            // provider family doit etre invalide : sans ca, un nouveau message
+            // agent arrive en FCM mais la timeline reste stale.
+            try {
+              final ticketId = (data['entity_id'] ??
+                      data['ticket_id'] ??
+                      data['id'])
+                  ?.toString();
+              if (ticketId != null && ticketId.isNotEmpty) {
+                ref.read(ticketDetailProvider(ticketId).notifier).refresh();
+              }
+            } catch (e) {
+              debugPrint('[FCM.refresh] ticketDetail failed: $e');
+            }
+          }
+
+          // Badge cloche : tout FCM entrant represente potentiellement une
+          // nouvelle entree dans l'inbox notifications (backend cree une row
+          // notifications en parallele du push). Invalider le compteur pour
+          // que le badge header se mette a jour sans attendre une navigation.
+          try {
+            ref.read(unreadCountProvider.notifier).refresh();
+          } catch (e) {
+            debugPrint('[FCM.refresh] unreadCount failed: $e');
           }
         },
       );
@@ -236,12 +301,24 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       // Refresh automatique a la reprise : apres un fond prolonge,
       // les listes et compteurs sont stales (statut transitionne cote
       // backend pendant que l'app etait endormie, nouveaux ordres rates
-      // par Doze). Non-bloquant, swallow les erreurs.
+      // par Doze, silent push perdus). Non-bloquant, swallow les erreurs.
       try {
         ref.read(ordersListProvider.notifier).refresh();
       } catch (_) {}
       try {
         ref.read(dashboardProvider.notifier).refresh();
+      } catch (_) {}
+      try {
+        ref.read(profileProvider.notifier).loadProfile();
+      } catch (_) {}
+      try {
+        ref.read(walletProvider.notifier).loadBalance();
+      } catch (_) {}
+      try {
+        ref.read(ticketsListProvider.notifier).refresh();
+      } catch (_) {}
+      try {
+        ref.read(unreadCountProvider.notifier).refresh();
       } catch (_) {}
     }
   }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/menu_model.dart';
 import 'package:merchant/providers/menu_provider.dart';
@@ -23,6 +24,7 @@ class MenuScreen extends ConsumerStatefulWidget {
 
 class _MenuScreenState extends ConsumerState<MenuScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
   bool _isSearching = false;
 
   @override
@@ -32,6 +34,12 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(menusListProvider.notifier).load();
     });
+  }
+
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await ref.read(menusListProvider.notifier).refresh();
+    _freshKey.currentState?.bump();
   }
 
   @override
@@ -57,25 +65,30 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: TextStyle(color: textColor, fontSize: 16.sp),
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   hintText: 'Rechercher un menu…',
-                  hintStyle: TextStyle(color: textLightColor, fontSize: 14.sp),
                   border: InputBorder.none,
                 ),
                 onSubmitted: (query) {
                   ref.read(menusListProvider.notifier).searchMenus(query);
                 },
               )
-            : const Text('Mes Menus'),
+            : const Text('Mes menus'),
         actions: <Widget>[
-          IconButton(
-            icon: IconManager.getIcon(
-              _isSearching ? 'close' : 'search',
-              color: textColor,
+          Padding(
+            padding: EdgeInsets.only(right: 4.w),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
             ),
+          ),
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
             tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
             onPressed: () {
+              ZeetHaptics.tap();
               setState(() {
                 _isSearching = !_isSearching;
                 if (!_isSearching) {
@@ -86,11 +99,11 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
             },
           ),
           PopupMenuButton<String>(
-            tooltip: 'Gestion du catalogue',
-            icon: Icon(Icons.more_vert_rounded, color: textColor),
+            tooltip: 'Catalogue',
+            icon: const Icon(Icons.more_vert_rounded),
             onSelected: (String route) => Routes.navigateTo(route),
-            itemBuilder: (_) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
+            itemBuilder: (_) => const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
                 value: Routes.products,
                 child: ListTile(
                   leading: Icon(Icons.restaurant_menu_outlined),
@@ -98,11 +111,11 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   dense: true,
                 ),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: Routes.productCategories,
                 child: ListTile(
                   leading: Icon(Icons.category_outlined),
-                  title: Text('Categories'),
+                  title: Text('Catégories'),
                   dense: true,
                 ),
               ),
@@ -132,10 +145,13 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     );
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(menusListProvider.notifier).refresh(),
+      onRefresh: _refreshAll,
       child: ZeetScreenScaffold(
         state: _resolveState(menusState, isOnline),
-        onRetry: () => ref.read(menusListProvider.notifier).load(),
+        onRetry: () async {
+          await ref.read(menusListProvider.notifier).load();
+          _freshKey.currentState?.bump();
+        },
         loading: const ZeetSkeletonList(itemCount: 6, itemHeight: 140),
         emptyTitle: 'Menu vide',
         emptySubtitle: 'Ajoute des produits pour les afficher sur la fiche',

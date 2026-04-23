@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/models/ticket_model.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/ticket_provider.dart';
@@ -29,6 +30,7 @@ class TicketsScreen extends ConsumerStatefulWidget {
 
 class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
 
   @override
   void initState() {
@@ -55,6 +57,12 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   Future<void> _refresh() async {
     await HapticFeedback.lightImpact();
     await ref.read(ticketsListProvider.notifier).refresh();
+  }
+
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await _refresh();
+    _freshKey.currentState?.bump();
   }
 
   void _openCreate() {
@@ -84,9 +92,20 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             ],
           ],
         ),
+        actions: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(right: ZeetSpacing.x2),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
+            ),
+          ),
+        ],
       ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _refreshAll,
         child: Column(
           children: <Widget>[
             Padding(

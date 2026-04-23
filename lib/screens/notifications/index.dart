@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 import 'package:merchant/core/constants/copy.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/models/notification_model.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/notifications_provider.dart';
@@ -34,6 +35,7 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
 
   @override
   void initState() {
@@ -64,6 +66,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   Future<void> _refresh() async {
     await HapticFeedback.lightImpact();
     await ref.read(notificationsListProvider.notifier).refresh();
+  }
+
+  /// Refresh unifié : recharge le provider puis bumpe la chip de fraîcheur
+  /// pour qu'elle affiche « À l'instant » (pull-to-refresh, retry empty, etc.).
+  Future<void> _refreshAll() async {
+    await _refresh();
+    _freshKey.currentState?.bump();
   }
 
   Future<void> _markAllAsRead() async {
@@ -128,6 +137,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       appBar: ZeetAppBar(
         title: const Text('Notifications'),
         actions: <Widget>[
+          // Freshness chip — signal visuel de fraîcheur + alternative tap
+          // au pull-to-refresh (discoverability §6). Bumpée par `_refreshAll`.
+          Padding(
+            padding: const EdgeInsets.only(right: ZeetSpacing.x2),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
+            ),
+          ),
           // Action unique a droite — DS §3.
           // Visible seulement si le provider rapporte des non-lus.
           if (unread > 0)
@@ -145,14 +165,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _refreshAll,
         child: ZeetStateBuilder<List<NotificationItem>>(
           data: hasAny ? state.items : null,
           isLoading: isLoading,
           error: error,
           isOffline: isOffline && !hasAny,
-          onRetry: () =>
-              ref.read(notificationsListProvider.notifier).load(),
+          onRetry: () async {
+            await ref.read(notificationsListProvider.notifier).load();
+            _freshKey.currentState?.bump();
+          },
           emptyIcon: Icons.notifications_none_outlined,
           emptyTitle: Copy.emptyNotifications,
           emptySubtitle: Copy.emptyNotificationsSubtitle,

@@ -213,51 +213,55 @@ class _ProfileOverlayToggleState extends ConsumerState<ProfileOverlayToggle> {
 
   @override
   Widget build(BuildContext context) {
+    // Aligne sur la densite POS du reste des tiles profil (36x36 icon,
+    // padding h=14 v=8, font 15sp, min-height 56pt).
     return Column(
       children: <Widget>[
         SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          contentPadding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 4.h),
           value: _overlayEnabled,
           activeThumbColor: ZeetColors.primary,
           onChanged: (bool v) => _toggleOverlay(v),
           secondary: Container(
-            width: 48.w,
-            height: 48.h,
+            width: 36.w,
+            height: 36.h,
             decoration: BoxDecoration(
               color: ZeetColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(ZeetRadius.md),
+              borderRadius: BorderRadius.circular(ZeetRadius.sm),
             ),
             child: Icon(
               Icons.bubble_chart_rounded,
               color: ZeetColors.primary,
-              size: 22.r,
+              size: 18.r,
             ),
           ),
           title: Text(
             'Bulle nouvelle commande',
             style: TextStyle(
               color: widget.textColor,
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
+              fontSize: 15.sp,
+              fontWeight: FontWeight.w600,
             ),
           ),
           subtitle: Text(
             _overlayEnabled
-                ? 'Active : une bulle s\'affiche par-dessus les autres apps'
+                ? 'Bulle activée'
                 : _overlayHasPermission
-                    ? 'Bulle flottante visible par-dessus les autres apps'
-                    : 'Permission necessaire pour afficher la bulle',
+                    ? 'Bulle flottante par-dessus les autres apps'
+                    : 'Permission nécessaire',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: widget.textLightColor,
-              fontSize: 12.sp,
+              fontSize: 11.sp,
             ),
           ),
         ),
         Divider(
           height: 1.h,
           thickness: 1,
-          indent: 56.w,
-          endIndent: 16.w,
+          indent: 62.w,
+          endIndent: 14.w,
           color: widget.textLightColor.withValues(alpha: 0.1),
         ),
       ],

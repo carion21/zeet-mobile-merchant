@@ -64,16 +64,20 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
     // Fetch immediatement si pas encore en state. Le notifier met a jour
     // pickupOtp; on lit avec ref.watch() dans build().
     Future.microtask(() {
-      final state = ref.read(orderDetailProvider);
+      final state = ref.read(orderDetailProvider(widget.orderId));
       if (state.pickupOtp == null) {
-        ref.read(orderDetailProvider.notifier).getPickupOtp(widget.orderId);
+        ref
+            .read(orderDetailProvider(widget.orderId).notifier)
+            .getPickupOtp(widget.orderId);
       }
     });
 
     // Tick du cooldown 1x/sec pour mettre a jour l'UI (countdown visible).
     _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      ref.read(orderDetailProvider.notifier).tickOtpCooldown();
+      ref
+          .read(orderDetailProvider(widget.orderId).notifier)
+          .tickOtpCooldown();
       // Force le rebuild pour rafraichir l'affichage du countdown.
       setState(() {});
     });
@@ -91,7 +95,7 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderDetailProvider);
+    final state = ref.watch(orderDetailProvider(widget.orderId));
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
     final otp = state.pickupOtp;
@@ -267,7 +271,9 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
         description: state.actionError ?? 'Reessayez dans un instant.',
         retryLabel: 'Reessayer',
         onRetry: () {
-          ref.read(orderDetailProvider.notifier).getPickupOtp(widget.orderId);
+          ref
+              .read(orderDetailProvider(widget.orderId).notifier)
+              .getPickupOtp(widget.orderId);
         },
       );
     }
@@ -348,7 +354,7 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
   Future<void> _resendCode() async {
     HapticFeedback.mediumImpact();
     final ok = await ref
-        .read(orderDetailProvider.notifier)
+        .read(orderDetailProvider(widget.orderId).notifier)
         .resendPickupOtp(widget.orderId);
     if (!mounted) return;
     if (ok) {
@@ -358,7 +364,7 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
         message: 'Nouveau code envoye au livreur.',
       );
     } else {
-      final err = ref.read(orderDetailProvider).actionError;
+      final err = ref.read(orderDetailProvider(widget.orderId)).actionError;
       AppToast.showWarning(
         context: context,
         message: err ?? 'Renvoi impossible. Reessayez plus tard.',

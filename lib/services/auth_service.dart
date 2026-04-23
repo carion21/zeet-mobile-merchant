@@ -4,6 +4,7 @@ import 'package:merchant/core/constants/api.dart';
 import 'package:merchant/models/partner_model.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/device_token_manager.dart';
+import 'package:merchant/services/fcm_service.dart';
 import 'package:merchant/services/token_service.dart';
 
 /// Service d'authentification pour la surface partner.
@@ -61,7 +62,16 @@ class AuthService {
       // Enregistrer le device token FCM aupres du backend (best-effort).
       // CRITIQUE cote partner : le push est la facon de reveiller le
       // restaurateur sur une nouvelle commande entrante.
+      //
+      // Double tentative :
+      //  1. registerCurrentDevice() : utilise le token deja en cache si FCM a
+      //     deja fire onTokenRefresh ou si init a deja fetch le token.
+      //  2. ensureTokenRegistered() : refetch le token via FirebaseMessaging
+      //     (sans prompt) et re-register. Indispensable si l'user se relogge
+      //     apres une session ou le cache etait vide, sinon _cachedToken
+      //     reste null et registerCurrentDevice skippe silencieusement.
       unawaited(DeviceTokenManager.instance.registerCurrentDevice());
+      unawaited(FcmService.instance.ensureTokenRegistered());
     }
 
     return response;

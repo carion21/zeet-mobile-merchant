@@ -11,6 +11,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:merchant/core/utils/color_utils.dart';
+
 /// Statut canonique d'une demande de virement partner.
 enum PayoutStatus {
   requested,
@@ -56,24 +58,6 @@ enum PayoutStatus {
     }
   }
 
-  /// Couleur de badge associee (tokens ZEET — a aligner avec AppColors si besoin).
-  Color get color {
-    switch (this) {
-      case PayoutStatus.requested:
-        return const Color(0xFF9E9E9E); // gris : brouillon
-      case PayoutStatus.pending:
-        return const Color(0xFFFFA500); // orange : en cours admin
-      case PayoutStatus.validated:
-        return const Color(0xFF2196F3); // bleu : partner a confirme
-      case PayoutStatus.completed:
-        return const Color(0xFF4CAF50); // vert : argent arrive
-      case PayoutStatus.rejected:
-        return const Color(0xFFE53935); // rouge : refuse
-      case PayoutStatus.cancelled:
-        return const Color(0xFF757575); // gris fonce : annule
-    }
-  }
-
   /// Parse une valeur brute (String de l'API) vers un PayoutStatus.
   /// Gere le cas legacy `paid` -> completed et les valeurs inconnues (null).
   static PayoutStatus? fromString(dynamic raw) {
@@ -110,6 +94,29 @@ enum PayoutStatus {
   ];
 }
 
+/// Objet riche `{id,label,value,color}` envoye par le core quand `status`
+/// est fourni comme objet (et non simple string). Porte la couleur
+/// authoritative pour l'UI.
+class PayoutStatusBadge {
+  final int? id;
+  final String? label;
+  final String? value;
+  final String? color;
+
+  const PayoutStatusBadge({this.id, this.label, this.value, this.color});
+
+  factory PayoutStatusBadge.fromJson(Map<String, dynamic> json) {
+    return PayoutStatusBadge(
+      id: json['id'] as int?,
+      label: json['label'] as String?,
+      value: json['value'] as String?,
+      color: json['color'] as String?,
+    );
+  }
+
+  Color? get colorValue => hexToColor(color);
+}
+
 /// Demande de virement effectuee par le partner.
 class Payout {
   final int? id;
@@ -118,6 +125,10 @@ class Payout {
   final double amount;
   final String? currency;
   final PayoutStatus? status;
+
+  /// Objet riche envoye par le core quand `status` est fourni comme
+  /// `{id,label,value,color}`. Source de verite pour la couleur du badge.
+  final PayoutStatusBadge? statusBadge;
   final String? note;
   final String? method;
   final Map<String, dynamic>? accountDetails;
@@ -136,6 +147,7 @@ class Payout {
     required this.amount,
     this.currency,
     this.status,
+    this.statusBadge,
     this.note,
     this.method,
     this.accountDetails,
@@ -155,17 +167,32 @@ class Payout {
   bool get isRejected => status == PayoutStatus.rejected;
   bool get isCancelled => status == PayoutStatus.cancelled;
 
+  /// Couleur authoritative du statut, provenant du backend si fournie.
+  /// `null` → l'UI doit fallback sur un neutre (`ZeetColors.inkMuted`).
+  Color? get statusColor => statusBadge?.colorValue;
+
   /// true si la demande est terminee (succes ou echec) — utile pour figer l'UI.
   bool get isTerminal => isCompleted || isRejected || isCancelled;
 
   factory Payout.fromJson(Map<String, dynamic> json) {
+    // `status` peut etre une String legacy ou un objet riche
+    // `{id,label,value,color}` depuis l'evolution core. On parse les deux
+    // formes : l'enum (state-machine) ET le badge (couleur).
+    dynamic rawStatus = json['status'];
+    PayoutStatusBadge? statusBadge;
+    if (rawStatus is Map<String, dynamic>) {
+      statusBadge = PayoutStatusBadge.fromJson(rawStatus);
+      rawStatus = statusBadge.value;
+    }
+
     return Payout(
       id: json['id'] as int?,
       uuid: json['uuid'] as String? ?? json['id']?.toString(),
       code: json['code'] as String? ?? json['reference'] as String?,
       amount: _asDouble(json['amount'] ?? json['value']),
       currency: json['currency'] as String?,
-      status: PayoutStatus.fromString(json['status']),
+      status: PayoutStatus.fromString(rawStatus),
+      statusBadge: statusBadge,
       note: json['note'] as String? ?? json['description'] as String?,
       method: json['method'] as String?,
       accountDetails: json['account_details'] is Map<String, dynamic>
@@ -214,6 +241,7 @@ class Payout {
     double? amount,
     String? currency,
     PayoutStatus? status,
+    PayoutStatusBadge? statusBadge,
     String? note,
     String? method,
     Map<String, dynamic>? accountDetails,
@@ -232,6 +260,7 @@ class Payout {
       amount: amount ?? this.amount,
       currency: currency ?? this.currency,
       status: status ?? this.status,
+      statusBadge: statusBadge ?? this.statusBadge,
       note: note ?? this.note,
       method: method ?? this.method,
       accountDetails: accountDetails ?? this.accountDetails,

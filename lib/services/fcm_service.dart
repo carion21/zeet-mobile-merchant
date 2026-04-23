@@ -39,21 +39,28 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   await LocalNotificationService.init();
 
-  final type = message.data['type']?.toString() ?? '';
+  // Contract §2.1 — `type_value` est la cle canonique, `type` en fallback.
+  // Aligne sur le dispatcher foreground (main.dart) pour un parsing coherent.
+  final String type =
+      (message.data['type_value']?.toString().isNotEmpty ?? false)
+          ? message.data['type_value'].toString()
+          : message.data['type']?.toString() ?? '';
   debugPrint(
     '[FcmService.bg] received: type=$type entity=${message.data['entity_id']}',
   );
 
-  // Seuls les events critiques meritent un full-screen intent.
-  if (type == 'order.created' || type == 'new_order') {
-    final data = Map<String, dynamic>.from(message.data);
-    // Merge title/body depuis notification:{} si fourni.
-    final notif = message.notification;
-    if (notif != null) {
-      data['title'] ??= notif.title;
-      data['body'] ??= notif.body;
-    }
+  final data = Map<String, dynamic>.from(message.data);
+  // Merge title/body depuis notification:{} si fourni (iOS collapse ces
+  // champs dans message.notification plutot que dans data).
+  final notif = message.notification;
+  if (notif != null) {
+    data['title'] ??= notif.title;
+    data['body'] ??= notif.body;
+  }
 
+  // Seuls les events "new order" meritent un full-screen intent avec
+  // sonnerie alarme — ils requierent une decision immediate.
+  if (type == 'order.created' || type == 'new_order') {
     final title = (data['title']?.toString().isNotEmpty ?? false)
         ? data['title'].toString()
         : 'Nouvelle commande';
@@ -83,6 +90,50 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
       payloadData: data,
       groupKey: grouped ? kIncomingOrderGroupKey : null,
     );
+    return;
+  }
+
+  // Transitions de commande en background — sans ce relais, aucune notif
+  // n'apparait quand l'app est killed et l'user voit l'etat stale au
+  // retour foreground. Cf. bug "le refresh partner n'est pas toujours
+  // effectif". Canal `zeet_partner_orders` HIGH (son + vibration, pas FSI).
+  const Set<String> transitionTypes = <String>{
+    'order.updated',
+    'order.cancelled',
+    'order.delivered',
+    'order.rider_assigned',
+    'order.otp.updated',
+  };
+  if (transitionTypes.contains(type)) {
+    final String title = (data['title']?.toString().isNotEmpty ?? false)
+        ? data['title'].toString()
+        : _defaultTransitionTitle(type);
+    final String body = (data['body']?.toString().isNotEmpty ?? false)
+        ? data['body'].toString()
+        : 'Appuyez pour voir la commande';
+    await LocalNotificationService.showOrderUpdate(
+      title: title,
+      body: body,
+      payloadData: data,
+    );
+  }
+}
+
+/// Libelle par defaut quand le backend n'envoie pas de `title` dans le
+/// payload data (fallback rare — en prod le backend pose toujours ce champ).
+String _defaultTransitionTitle(String type) {
+  switch (type) {
+    case 'order.cancelled':
+      return 'Commande annulée';
+    case 'order.delivered':
+      return 'Commande livrée';
+    case 'order.rider_assigned':
+      return 'Livreur assigné';
+    case 'order.otp.updated':
+      return 'Code de collecte mis à jour';
+    case 'order.updated':
+    default:
+      return 'Mise à jour commande';
   }
 }
 
@@ -143,6 +194,18 @@ class FcmService {
 
     if (promptPermission) {
       await requestPushPermission();
+    } else {
+      // Bug historique : sans ce fallback, le token FCM n'etait jamais refetch
+      // au cold-start. Si l'utilisateur avait accepte la permission lors d'une
+      // session precedente mais que le token FCM a ete invalide (rotation
+      // silencieuse, reinstall Google Play Services, backend qui a supprime
+      // l'entree), le backend n'avait plus aucun moyen de joindre l'app et
+      // les nouvelles commandes tombaient dans le vide.
+      //
+      // ensureTokenRegistered verifie le statut de permission SANS declencher
+      // le prompt iOS (getNotificationSettings, pas requestPermission) et
+      // re-enregistre le token courant aupres du backend si tout est ok.
+      unawaited(ensureTokenRegistered());
     }
 
     // 3. Rotation de token.
@@ -232,6 +295,49 @@ class FcmService {
       await action();
     } catch (e) {
       debugPrint('[FcmService] _dispatchWhenReady action failed: $e');
+    }
+  }
+
+  /// Re-fetch silencieux du token FCM + re-register cote backend, **sans**
+  /// declencher le prompt de permission systeme.
+  ///
+  /// A appeler :
+  ///  - Au cold-start (depuis [init], pour couvrir le cas "l'utilisateur a
+  ///    accepte la permission lors d'une precedente session").
+  ///  - Apres un login (pour garantir que le backend recoit le token a jour
+  ///    meme si la session prec. a ete perdue / le token a rotate).
+  ///
+  /// Skip silencieusement si la permission n'est pas accordee, ou si
+  /// `getToken()` echoue (reseau / Google Play Services absent).
+  Future<bool> ensureTokenRegistered() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      // getNotificationSettings NE DECLENCHE PAS le prompt iOS — c'est une
+      // simple lecture du statut courant.
+      final settings = await messaging.getNotificationSettings();
+      final status = settings.authorizationStatus;
+      if (status != AuthorizationStatus.authorized &&
+          status != AuthorizationStatus.provisional) {
+        debugPrint(
+          '[FcmService.ensure] permission not granted yet (status=$status) — skip',
+        );
+        return false;
+      }
+
+      final String? token = await messaging.getToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('[FcmService.ensure] getToken returned null/empty');
+        return false;
+      }
+
+      DeviceTokenManager.instance.setPushToken(token);
+      debugPrint(
+        '[FcmService.ensure] FCM token refreshed: ${token.substring(0, 16)}...',
+      );
+      return await DeviceTokenManager.instance.registerCurrentDevice();
+    } catch (e) {
+      debugPrint('[FcmService.ensure] failed: $e');
+      return false;
     }
   }
 

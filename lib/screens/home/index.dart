@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/widgets/notif_rationale_sheet.dart';
 import 'package:merchant/core/widgets/partner_connectivity_banner.dart';
+import 'package:merchant/models/business_day_window.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
@@ -34,6 +37,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  /// Ticker qui detecte le passage du cutoff de journee commerciale
+  /// (04h par defaut) pendant que l'ecran est ouvert → re-fetch dashboard
+  /// pour reinitialiser orders_today / revenue_today. Cas critique : un
+  /// partner qui reste sur l'ecran de 03h55 a 04h05 doit voir ses KPIs
+  /// repartir a 0 sans action manuelle. Cf. brief PARTNER_BUSINESS_DAY §5.
+  Timer? _businessDayTicker;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +59,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.read(dashboardProvider.notifier).loadSummary();
       ref.read(profileProvider.notifier).loadProfile();
       ref.read(ordersListProvider.notifier).load();
+    });
+
+    _businessDayTicker = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      final BusinessDayWindow? bd =
+          ref.read(dashboardProvider).summary?.businessDay;
+      if (bd != null && bd.isExpired()) {
+        ref.read(dashboardProvider.notifier).refresh();
+      }
     });
 
     // Si le /me en arrière-plan découvre des tokens invalides → login.
@@ -83,6 +102,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void dispose() {
+    _businessDayTicker?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -128,6 +148,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       child: HomeEarningsCard(
                         earnings: todayEarnings,
                         isDark: isDark,
+                        businessDay: dashboardSummary?.businessDay,
                       ),
                     ),
                     SliverToBoxAdapter(child: SizedBox(height: 16.h)),

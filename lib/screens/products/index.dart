@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/app_popup.dart';
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/category_model.dart';
 import 'package:merchant/models/product_model.dart';
@@ -46,7 +47,14 @@ class ProductsScreen extends ConsumerStatefulWidget {
 class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
   bool _isSearching = false;
+
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await ref.read(productsListProvider.notifier).refresh();
+    _freshKey.currentState?.bump();
+  }
 
   @override
   void initState() {
@@ -78,8 +86,6 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color textColor = scheme.onSurface;
-    final Color textLightColor = scheme.onSurfaceVariant;
 
     final state = ref.watch(productsListProvider);
 
@@ -90,11 +96,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                style: TextStyle(color: textColor, fontSize: 16.sp),
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   hintText: 'Rechercher un produit…',
-                  hintStyle:
-                      TextStyle(color: textLightColor, fontSize: 14.sp),
                   border: InputBorder.none,
                 ),
                 onSubmitted: (query) {
@@ -105,13 +108,20 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
               )
             : const Text('Produits'),
         actions: <Widget>[
-          IconButton(
-            icon: IconManager.getIcon(
-              _isSearching ? 'close' : 'search',
-              color: textColor,
+          Padding(
+            padding: EdgeInsets.only(right: 4.w),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
             ),
+          ),
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
             tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
             onPressed: () {
+              ZeetHaptics.tap();
               setState(() {
                 _isSearching = !_isSearching;
                 if (!_isSearching) {
@@ -157,10 +167,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         );
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(productsListProvider.notifier).refresh(),
+      onRefresh: _refreshAll,
       child: ZeetScreenScaffold(
         state: _resolveState(state, isOnline),
-        onRetry: () => ref.read(productsListProvider.notifier).load(),
+        onRetry: () async {
+          await ref.read(productsListProvider.notifier).load();
+          _freshKey.currentState?.bump();
+        },
         loading: const ZeetSkeletonList(itemCount: 6, itemHeight: 104),
         emptyTitle: state.search != null || state.categoryFilter != null
             ? 'Aucun produit ne correspond'
@@ -224,7 +237,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     await Routes.push<void>(ProductDetailScreen(productId: product.id));
     // Au retour, rafraichit la liste pour capter les eventuelles modifs.
     if (mounted) {
-      await ref.read(productsListProvider.notifier).refresh();
+      await _refreshAll();
     }
   }
 

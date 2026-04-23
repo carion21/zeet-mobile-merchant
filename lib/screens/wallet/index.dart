@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
+import 'package:merchant/core/widgets/freshness/zeet_freshness_chip.dart';
 import 'package:merchant/models/wallet_model.dart';
 import 'package:merchant/providers/wallet_provider.dart';
 import 'transaction_detail_sheet.dart';
@@ -27,6 +28,7 @@ class WalletScreen extends ConsumerStatefulWidget {
 
 class _WalletScreenState extends ConsumerState<WalletScreen> {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
 
   @override
   void initState() {
@@ -55,6 +57,12 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     await ref.read(walletProvider.notifier).refresh();
   }
 
+  /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
+  Future<void> _refreshAll() async {
+    await _refresh();
+    _freshKey.currentState?.bump();
+  }
+
   @override
   Widget build(BuildContext context) {
     final WalletState state = ref.watch(walletProvider);
@@ -62,9 +70,22 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
 
     return Scaffold(
       backgroundColor: scheme.surface,
-      appBar: const ZeetAppBar(title: Text('Portefeuille')),
+      appBar: ZeetAppBar(
+        title: const Text('Portefeuille'),
+        actions: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(right: ZeetSpacing.x2),
+            child: Center(
+              child: ZeetFreshnessChipLocal(
+                key: _freshKey,
+                onRefresh: _refreshAll,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _refreshAll,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
