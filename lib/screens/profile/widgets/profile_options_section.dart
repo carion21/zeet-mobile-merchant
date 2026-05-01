@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/constants/links.dart';
+import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/screens/profile/widgets/profile_overlay_toggle.dart';
 import 'package:merchant/screens/root/index.dart';
 import 'package:merchant/screens/service_closed/index.dart';
 import 'package:merchant/screens/tickets/index.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:merchant/services/overlay_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 /// Bloc des options du profil : mes commandes, portefeuille,
@@ -95,6 +98,34 @@ class ProfileOptionsSection extends ConsumerWidget {
       ),
     ];
 
+    // Légal — pages publiques zeet.geasscorp.com (CGU + confidentialité).
+    // Section discrète en bas du profil pour respecter App Review
+    // Guideline 5.1.1 (consentement) sans alourdir l'UI principale.
+    final List<Widget> legal = <Widget>[
+      _ProfileOptionTile(
+        title: 'Conditions d\'utilisation',
+        icon: 'document',
+        onTap: () {
+          ZeetHaptics.tap();
+          _openExternal(context, ZeetLinks.terms);
+        },
+        showDivider: true,
+        textColor: textColor,
+        textLightColor: textLightColor,
+      ),
+      _ProfileOptionTile(
+        title: 'Politique de confidentialité',
+        icon: 'privacy',
+        onTap: () {
+          ZeetHaptics.tap();
+          _openExternal(context, ZeetLinks.privacy);
+        },
+        showDivider: false,
+        textColor: textColor,
+        textLightColor: textLightColor,
+      ),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -122,6 +153,13 @@ class ProfileOptionsSection extends ConsumerWidget {
           children: restaurant,
         ),
         SizedBox(height: 14.h),
+        _SectionLabel(label: 'Légal', color: textLightColor),
+        SizedBox(height: 6.h),
+        _OptionsCard(
+          surfaceColor: surfaceColor,
+          children: legal,
+        ),
+        SizedBox(height: 14.h),
         // Peak moment — fin de service. CTA distinct pour emphase
         // (neuro-UX §8 peak-end rule).
         _PeakCta(
@@ -136,6 +174,17 @@ class ProfileOptionsSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _openExternal(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      AppToast.showError(
+        context: context,
+        message: 'Impossible d\'ouvrir le lien.',
+      );
+    }
   }
 }
 

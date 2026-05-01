@@ -96,6 +96,8 @@ class IconManager {
     'note': Icons.sticky_note_2_outlined,
     'payouts': Icons.account_balance_outlined,
     'schedule': Icons.schedule_outlined,
+    'document': Icons.description_outlined,
+    'privacy': Icons.privacy_tip_outlined,
   };
 
   // Icônes Cupertino pour iOS
@@ -191,6 +193,8 @@ class IconManager {
     'note': CupertinoIcons.doc_text,
     'payouts': CupertinoIcons.money_dollar_circle,
     'schedule': CupertinoIcons.time,
+    'document': CupertinoIcons.doc_text,
+    'privacy': CupertinoIcons.shield_lefthalf_fill,
   };
 
   static Icon getIcon(String iconName, {Color? color, double? size}) {
