@@ -142,14 +142,15 @@ class Routes {
 
     if (routeBuilder == null) {
       return _buildRoute(
-        (_) => Scaffold(
+        (BuildContext context) => Scaffold(
           appBar: AppBar(title: const Text('Page introuvable')),
           body: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.wrong_location_outlined,
-                    size: 48, color: Colors.grey),
+                Icon(Icons.wrong_location_outlined,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(height: 16),
                 Text(
                   'La route "${settings.name}" n\'existe pas.',

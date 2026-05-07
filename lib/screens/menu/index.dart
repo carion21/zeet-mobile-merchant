@@ -128,7 +128,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         onPressed: () => _showCreateMenuDialog(context, isDark),
         backgroundColor: AppColors.primary,
         tooltip: 'Créer un menu',
-        child: IconManager.getIcon('add', color: Colors.white),
+        child: IconManager.getIcon('add', color: AppColors.white),
       ),
     );
   }
@@ -283,15 +283,18 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                     padding:
                         EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                     decoration: BoxDecoration(
-                      color: menu.isPublished
-                          ? Colors.green.withValues(alpha: 0.1)
-                          : Colors.orange.withValues(alpha: 0.1),
+                      color: (menu.isPublished
+                              ? AppColors.success
+                              : AppColors.warning)
+                          .withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6.r),
                     ),
                     child: Text(
                       menu.isPublished ? 'Actif' : 'Inactif',
                       style: TextStyle(
-                        color: menu.isPublished ? Colors.green : Colors.orange,
+                        color: menu.isPublished
+                            ? AppColors.success
+                            : AppColors.warning,
                         fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
                       ),
@@ -418,7 +421,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark ? AppColors.darkText : AppColors.text;
     final textLightColor = isDark ? AppColors.darkTextLight : AppColors.textLight;
-    final backgroundColor = isDark ? AppColors.darkSurface : Colors.white;
+    final backgroundColor = isDark ? AppColors.darkSurface : AppColors.white;
 
     showModalBottomSheet(
       context: context,
@@ -470,7 +473,9 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                         width: 40.w,
                         height: 4.h,
                         decoration: BoxDecoration(
-                          color: Colors.grey.withValues(alpha: 0.3),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant,
                           borderRadius: BorderRadius.circular(2.r),
                         ),
                       ),
@@ -574,9 +579,10 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
       margin: EdgeInsets.only(bottom: 8.h),
       padding: EdgeInsets.all(12.w),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.05)
-            : Colors.grey.withValues(alpha: 0.05),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: Row(
@@ -589,7 +595,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               height: 48.w,
               fit: BoxFit.cover,
               borderRadius: BorderRadius.circular(6.r),
-              backgroundColor: Colors.grey.withValues(alpha: 0.2),
+              backgroundColor: AppColors.line.withValues(alpha: 0.4),
               errorWidget: IconManager.getIcon('restaurant',
                   color: textLightColor, size: 24.r),
             )
@@ -598,7 +604,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               width: 48.w,
               height: 48.w,
               decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.2),
+                color: AppColors.line.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(6.r),
               ),
               child: IconManager.getIcon('restaurant',
@@ -692,7 +698,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
         final isDark = Theme.of(context).brightness == Brightness.dark;
         return AlertDialog(
           backgroundColor:
-              isDark ? AppColors.darkSurface : Colors.white,
+              isDark ? AppColors.darkSurface : AppColors.white,
           title: const Text('Supprimer le menu'),
           content: Text(
               'Êtes-vous sûr de vouloir supprimer le menu "${menu.name}" ?'),
@@ -737,7 +743,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
     final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final backgroundColor = isDark ? AppColors.darkSurface : Colors.white;
+    final backgroundColor = isDark ? AppColors.darkSurface : AppColors.white;
 
     showModalBottomSheet(
       context: context,
@@ -764,7 +770,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   width: 40.w,
                   height: 4.h,
                   decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.3),
+                    color: Theme.of(context).colorScheme.outlineVariant,
                     borderRadius: BorderRadius.circular(2.r),
                   ),
                 ),

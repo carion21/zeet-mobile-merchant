@@ -57,7 +57,7 @@ class AppToast {
     }
 
     // Toujours fond blanc (ou surface pour dark mode)
-    final backgroundColor = isDarkMode ? AppColors.darkSurface : Colors.white;
+    final backgroundColor = isDarkMode ? AppColors.darkSurface : AppColors.white;
     final textColor = isDarkMode ? AppColors.darkText : AppColors.text;
 
     toastification.show(

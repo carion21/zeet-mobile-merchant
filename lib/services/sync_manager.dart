@@ -75,6 +75,13 @@ class SyncManager {
     return s;
   }
 
+  /// Reset le singleton — exclusivement pour les tests, ne pas appeler
+  /// en code de production. Cf. test/services/sync_manager_test.dart.
+  @visibleForTesting
+  static void resetForTesting() {
+    _instance = null;
+  }
+
   final PartnerDatabase _db;
   final OrderService _orderService;
   final Connectivity _connectivity = Connectivity();

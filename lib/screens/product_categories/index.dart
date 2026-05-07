@@ -132,8 +132,8 @@ class _ProductCategoriesScreenState
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateCategorySheet,
         backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: IconManager.getIcon('add', color: Colors.white),
+        foregroundColor: AppColors.white,
+        icon: IconManager.getIcon('add', color: AppColors.white),
         label: const Text('Nouvelle catégorie'),
       ),
     );
@@ -714,9 +714,9 @@ class _CategoryFormSheetState extends State<_CategoryFormSheet> {
                         ? SizedBox(
                             width: 20.r,
                             height: 20.r,
-                            child: const CircularProgressIndicator(
+                            child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppColors.white,
                             ),
                           )
                         : Text(

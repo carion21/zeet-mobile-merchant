@@ -98,6 +98,10 @@ dev_dependencies:
   # Codegen drift (tables → DAO typee).
   drift_dev: ^2.23.1
   build_runner: ^2.4.13
+  # Tests integration sync_manager : `open.overrideFor` pour pointer vers
+  # libsqlite3.so.0 systeme en `flutter test` Linux (sqlite3_flutter_libs
+  # ne couvre que le runtime mobile).
+  sqlite3: ^2.4.0
 
 # Configuration des icônes de l'application
 flutter_launcher_icons:
