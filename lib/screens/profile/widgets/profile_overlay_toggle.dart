@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/core/widgets/toastification.dart';
@@ -49,7 +48,7 @@ class _ProfileOverlayToggleState extends ConsumerState<ProfileOverlayToggle> {
   }
 
   Future<void> _toggleOverlay(bool value) async {
-    await HapticFeedback.selectionClick();
+    await ZeetHaptics.tap();
     final svc = OverlayService.instance;
 
     if (!value) {

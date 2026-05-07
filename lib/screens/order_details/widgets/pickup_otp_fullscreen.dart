@@ -26,7 +26,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/core/constants/colors.dart';
@@ -341,7 +340,7 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
   // ───────────────────────────────────────────────────────────────────
 
   Future<void> _speakCode(String code) async {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     final ok = await TtsService.instance.speakOtp(code);
     if (!ok && mounted) {
       AppToast.showInfo(
@@ -352,13 +351,13 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
   }
 
   Future<void> _resendCode() async {
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     final ok = await ref
         .read(orderDetailProvider(widget.orderId).notifier)
         .resendPickupOtp(widget.orderId);
     if (!mounted) return;
     if (ok) {
-      HapticFeedback.lightImpact();
+      ZeetHaptics.success();
       AppToast.showSuccess(
         context: context,
         message: 'Nouveau code envoye au livreur.',

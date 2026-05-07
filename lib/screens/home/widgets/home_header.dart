@@ -122,7 +122,7 @@ class HomeHeader extends ConsumerWidget {
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white,
-                                  fontSize: 10.sp,
+                                  fontSize: 12.sp,
                                   fontWeight: FontWeight.w700,
                                   height: 1.1,
                                 ),
@@ -156,7 +156,7 @@ class HomeHeader extends ConsumerWidget {
                       : 'Restaurant ferme, appuyez pour ouvrir',
                   button: true,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(20.r),
+                    borderRadius: BorderRadius.circular(ZeetRadius.md),
                     onTap: () => _showOpenNowSheet(
                       context,
                       ref,
@@ -205,7 +205,7 @@ class HomeHeader extends ConsumerWidget {
                               child: Text(
                                 'Override',
                                 style: TextStyle(
-                                  fontSize: 10.sp,
+                                  fontSize: 12.sp,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.primary,
                                   letterSpacing: 0.4,

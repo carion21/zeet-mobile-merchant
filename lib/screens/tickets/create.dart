@@ -9,7 +9,6 @@
 // CTA bottom sticky, haptic + toast sur succes.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -44,14 +43,14 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
-      await HapticFeedback.lightImpact();
+      await ZeetHaptics.success();
       return;
     }
     setState(() {
       _isSubmitting = true;
       _lastError = null;
     });
-    await HapticFeedback.mediumImpact();
+    await ZeetHaptics.warning();
 
     final CreateTicketRequest request = CreateTicketRequest(
       title: _titleController.text.trim(),
@@ -69,7 +68,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
 
     if (created != null) {
       setState(() => _isSubmitting = false);
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
         context: context,
         message: 'Ticket cree — reponse sous 24h',
@@ -151,7 +150,7 @@ class _CreateTicketScreenState extends ConsumerState<CreateTicketScreen> {
             _PrioritySelector(
               current: _priority,
               onChanged: (TicketPriority p) {
-                HapticFeedback.selectionClick();
+                ZeetHaptics.tap();
                 setState(() => _priority = p);
               },
             ),

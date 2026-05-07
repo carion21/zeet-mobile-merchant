@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:merchant/core/constants/copy.dart';
+import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/data/local/partner_database.dart';
 import 'package:merchant/providers/sync_provider.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -161,9 +162,43 @@ class _ActionTile extends ConsumerWidget {
                     label: 'Retirer',
                     variant: ZeetButtonVariant.ghost,
                     onPressed: () async {
+                      // Confirmation avant retrait : action irreversible —
+                      // une fois retiree, l'action ne peut plus etre rejouee.
+                      final bool confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext c) => AlertDialog(
+                              title: const Text('Retirer cette action ?'),
+                              content: Text(
+                                '"${_labelFor(action.type)}" sur la commande '
+                                '#${action.orderId} ne sera plus rejouee. '
+                                'Si l\'operation a deja reussi cote serveur, '
+                                'rien ne change.',
+                              ),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(c).pop(false),
+                                  child: const Text('Garder'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(c).pop(true),
+                                  child: const Text('Retirer'),
+                                ),
+                              ],
+                            ),
+                          ) ??
+                          false;
+                      if (!confirmed) return;
                       final PartnerDatabase db =
                           ref.read(partnerDatabaseProvider);
                       await db.removeAction(action.id);
+                      if (context.mounted) {
+                        AppToast.showSuccess(
+                          context: context,
+                          message: 'Action retiree de la file',
+                        );
+                      }
                     },
                   ),
                 ],

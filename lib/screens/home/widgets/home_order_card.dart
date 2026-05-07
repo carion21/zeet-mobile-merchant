@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -104,7 +103,7 @@ class HomeOrderCard extends ConsumerWidget {
     // pendant ce swipe/cancel sheet ne doit pas ouvrir l'ecran ring
     // par-dessus (race rapportee). Cf. IncomingOrderGestureLock.
     IncomingOrderGestureLock.markInteraction();
-    HapticFeedback.heavyImpact();
+    ZeetHaptics.heavy();
     if (!context.mounted) return;
     final String? reason = await showCancelReasonSheet(context);
     if (reason == null || !context.mounted) return;
@@ -737,7 +736,7 @@ class _CardAction extends ConsumerWidget {
         .confirm(order.id);
     if (!context.mounted) return;
     if (success) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else {
@@ -758,7 +757,7 @@ class _CardAction extends ConsumerWidget {
         .markPreparing(order.id);
     if (!context.mounted) return;
     if (success) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(context: context, message: 'Préparation lancée');
       ref.read(ordersListProvider.notifier).refresh();
     } else {
@@ -776,7 +775,7 @@ class _CardAction extends ConsumerWidget {
         .markReady(order.id);
     if (!context.mounted) return;
     if (success) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
         context: context,
         message: 'Commande prête pour collecte',

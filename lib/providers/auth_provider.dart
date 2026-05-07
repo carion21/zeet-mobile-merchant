@@ -4,6 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/models/partner_model.dart';
 import 'package:merchant/providers/sync_provider.dart';
+import 'package:merchant/providers/dashboard_provider.dart';
+import 'package:merchant/providers/notifications_provider.dart';
+import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/payout_provider.dart';
+import 'package:merchant/providers/profile_provider.dart';
+import 'package:merchant/providers/ticket_provider.dart';
+import 'package:merchant/providers/wallet_provider.dart';
 import 'package:merchant/services/auth_service.dart';
 import 'package:merchant/services/api_client.dart';
 
@@ -132,8 +139,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   ///   1. Purge la DB Drift locale (orders cache + queued actions). Sans
   ///      ca la queue d'un user A se rejouait avec les tokens du user B
   ///      apres un changement de compte → 403 et fuite cross-user.
-  ///   2. Demande au backend de revoquer les tokens + clear local tokens.
-  ///   3. Reset le state authProvider.
+  ///   2. Invalide les providers metier (orders, dashboard, wallet,
+  ///      payouts, profile, tickets, notifs). Sans ca l'user voyait
+  ///      brievement les commandes / le solde du compte precedent au
+  ///      cold-start de la session suivante.
+  ///   3. Demande au backend de revoquer les tokens + clear local tokens.
+  ///   4. Reset le state authProvider.
   ///
   /// FCM listeners ne sont PAS disposes ici : ils sont des singletons
   /// `_initialized` une seule fois dans `_MyAppState.initState`. Le
@@ -141,7 +152,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// `DeviceTokenManager.registerCurrentDevice()` au login suivant.
   ///
   /// Chaque etape est try/catch independante : on veut absolument que
-  /// le logout aboutisse meme si la purge DB echoue (sinon l'user est
+  /// le logout aboutisse meme si une purge echoue (sinon l'user est
   /// bloque sur un compte qu'il refuse).
   Future<void> logout() async {
     state = state.copyWith(status: AuthStatus.loading);
@@ -154,9 +165,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
       } catch (e) {
         debugPrint('[AuthProvider] clearAll DB failed: $e');
       }
+
+      // 2. Invalide les providers metier — Riverpod recreera les notifiers
+      //    a la prochaine watch/read, garantissant que rien du compte
+      //    precedent ne reste affiche.
+      for (final invalidate in <void Function()>[
+        () => ref.invalidate(ordersListProvider),
+        () => ref.invalidate(dashboardProvider),
+        () => ref.invalidate(walletProvider),
+        () => ref.invalidate(payoutsListProvider),
+        () => ref.invalidate(profileProvider),
+        () => ref.invalidate(ticketsListProvider),
+        () => ref.invalidate(unreadCountProvider),
+      ]) {
+        try {
+          invalidate();
+        } catch (e) {
+          debugPrint('[AuthProvider] invalidate provider failed: $e');
+        }
+      }
     }
 
-    // 2. Backend logout + clear tokens.
+    // 3. Backend logout + clear tokens.
     try {
       await _authService.logout();
     } catch (e) {

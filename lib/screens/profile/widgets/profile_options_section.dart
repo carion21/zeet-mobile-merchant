@@ -163,7 +163,7 @@ class _SectionLabel extends StatelessWidget {
         label.toUpperCase(),
         style: TextStyle(
           color: color.withValues(alpha: 0.8),
-          fontSize: 11.sp,
+          fontSize: 12.sp,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.2,
         ),

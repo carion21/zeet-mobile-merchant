@@ -292,7 +292,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                       menu.isPublished ? 'Actif' : 'Inactif',
                       style: TextStyle(
                         color: menu.isPublished ? Colors.green : Colors.orange,
-                        fontSize: 11.sp,
+                        fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -311,7 +311,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   SizedBox(width: 4.w),
                   Text(
                     menu.scheduleText,
-                    style: TextStyle(color: textLightColor, fontSize: 11.sp),
+                    style: TextStyle(color: textLightColor, fontSize: 12.sp),
                   ),
                   SizedBox(width: 16.w),
                   // Jours
@@ -320,7 +320,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                   SizedBox(width: 4.w),
                   Text(
                     menu.daysOfWeek.displayText,
-                    style: TextStyle(color: textLightColor, fontSize: 11.sp),
+                    style: TextStyle(color: textLightColor, fontSize: 12.sp),
                   ),
                   const Spacer(),
                   // Nb produits
@@ -328,7 +328,7 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
                     '${menu.productCount} produit${menu.productCount > 1 ? 's' : ''}',
                     style: TextStyle(
                       color: AppColors.primary,
-                      fontSize: 11.sp,
+                      fontSize: 12.sp,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

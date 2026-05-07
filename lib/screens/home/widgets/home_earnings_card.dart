@@ -44,7 +44,7 @@ class HomeEarningsCard extends ConsumerWidget {
         margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
         padding: EdgeInsets.all(20.w),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20.r),
+          borderRadius: BorderRadius.circular(ZeetRadius.md),
           image: DecorationImage(
             image: AssetImage(walletBackground),
             fit: BoxFit.cover,

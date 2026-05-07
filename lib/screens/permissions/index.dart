@@ -286,7 +286,7 @@ class _Header extends StatelessWidget {
             AppColors.primary.withValues(alpha: 0.05),
           ],
         ),
-        borderRadius: BorderRadius.circular(20.r),
+        borderRadius: BorderRadius.circular(ZeetRadius.md),
         border: Border.all(
           color: AppColors.primary.withValues(alpha: 0.25),
           width: 1,
@@ -534,7 +534,7 @@ class _CriticalPill extends StatelessWidget {
       child: Text(
         'Requis',
         style: TextStyle(
-          fontSize: 10.sp,
+          fontSize: 12.sp,
           fontWeight: FontWeight.w700,
           color: AppColors.primary,
           letterSpacing: 0.3,
@@ -595,7 +595,7 @@ class _StatusPill extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 11.sp,
+              fontSize: 12.sp,
               fontWeight: FontWeight.w700,
               color: fg,
             ),

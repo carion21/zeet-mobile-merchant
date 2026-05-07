@@ -14,7 +14,6 @@
 // + `unreadCountProvider` pour le badge cloche home_header.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -64,7 +63,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Future<void> _refresh() async {
-    await HapticFeedback.lightImpact();
+    await ZeetHaptics.success();
     await ref.read(notificationsListProvider.notifier).refresh();
   }
 

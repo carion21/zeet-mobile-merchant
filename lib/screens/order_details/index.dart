@@ -402,7 +402,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
                   size: 24.r, color: AppColors.primary),
               tooltip: 'Appeler ${order.customerPhone}',
               onPressed: () async {
-                HapticFeedback.selectionClick();
+                ZeetHaptics.tap();
                 await launchPhoneCall(
                   order.customerPhone,
                   context: context,
@@ -1143,7 +1143,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: 11.sp,
+            fontSize: 12.sp,
             color: textLightColor,
             height: 1.3,
           ),
@@ -1365,11 +1365,11 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   Future<void> _confirmOrder(Order order) async {
     // Haptics propagés (quickwin vague 2 §QW5) : confirmation sur tap,
     // succès lourd sur validation backend.
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -1380,11 +1380,11 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _markPreparing(Order order) async {
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.markPreparing(order.id);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
           context: context, message: 'Préparation lancée — un livreur a été assigné');
       ref.read(ordersListProvider.notifier).refresh();
@@ -1395,11 +1395,11 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _markReady(Order order) async {
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.markReady(order.id);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
           context: context, message: 'Commande prête pour collecte');
       ref.read(ordersListProvider.notifier).refresh();
@@ -1410,7 +1410,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _cancelOrder(Order order) async {
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     // Bottom sheet chips presets — évite la saisie clavier en cuisine
     // (issue C-02 de l'audit, règle zeet-pos-ergonomics §3).
     final reason = await showCancelReasonSheet(context);
@@ -1419,7 +1419,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
     final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showWarning(context: context, message: 'Commande annulée');
       ref.read(ordersListProvider.notifier).refresh();
       Routes.goBack();
@@ -1431,11 +1431,11 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   }
 
   Future<void> _resendOtp() async {
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     final notifier = ref.read(orderDetailProvider(widget.orderId).notifier);
     final success = await notifier.resendPickupOtp(widget.orderId);
     if (success && mounted) {
-      HapticFeedback.lightImpact();
+      ZeetHaptics.success();
       AppToast.showSuccess(
         context: context,
         message: 'Nouveau code envoye au livreur.',
@@ -1453,7 +1453,7 @@ class _OrderDetailsScreenState extends ConsumerState<OrderDetailsScreen> {
   /// du fetch initial si pas encore en state, du TTS et du cooldown.
   /// Phase 2 gap #2 : OTP lisible a 1m de distance.
   void _showPickupOtpFullscreen(Order order) {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     Routes.push(
       PickupOtpFullscreen(
         orderId: widget.orderId,

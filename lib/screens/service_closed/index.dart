@@ -28,7 +28,6 @@
 // Respect `MediaQuery.disableAnimations` : stagger/animations désactivées.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -406,7 +405,7 @@ class _StatTileState extends State<_StatTile> {
       // §6 "Number animation grammar" — signale le pic dopaminergique
       // sans saturer). Seulement si la valeur augmente (pas un reset).
       if (widget.stat.value > _lastAnimatedValue) {
-        HapticFeedback.lightImpact();
+        ZeetHaptics.success();
       }
       _lastAnimatedValue = widget.stat.value;
     }

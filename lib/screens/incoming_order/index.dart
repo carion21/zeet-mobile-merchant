@@ -26,7 +26,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -153,11 +152,11 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
 
     // Vibration rythmee en continu en complement du son. Obligatoire pos
     // ergonomics §2bis (haptic = feedback primaire sous bruit cuisine).
-    await HapticFeedback.heavyImpact();
+    await ZeetHaptics.heavy();
     _hapticTicker?.cancel();
     _hapticTicker = Timer.periodic(const Duration(milliseconds: 1100), (_) {
       if (!mounted) return;
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
     });
 
     // Coupe la sonnerie apres _ringTimeout pour preserver la batterie.

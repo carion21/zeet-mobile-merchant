@@ -12,7 +12,7 @@
 // Motion partner (§3) : pulse rouge pour nouvelle commande (fonctionnel).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 @pragma('vm:entry-point')
@@ -76,7 +76,7 @@ class _OrderBubbleState extends State<_OrderBubble>
   }
 
   Future<void> _handleTap() async {
-    await HapticFeedback.mediumImpact();
+    await ZeetHaptics.warning();
     // Demande au main isolate d'ouvrir l'app (ramene MainActivity au front).
     await FlutterOverlayWindow.shareData(<String, Object?>{
       'action': 'open_app',

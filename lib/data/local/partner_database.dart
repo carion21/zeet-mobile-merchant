@@ -230,6 +230,25 @@ class PartnerDatabase extends _$PartnerDatabase {
 
   Future<List<QueuedAction>> getAllActions() => select(queuedActions).get();
 
+  /// Cherche une action pending OU syncing du meme type/orderId. Utilise
+  /// par SyncManager pour dedupliquer un double-tap (ex: confirmer la
+  /// meme commande deux fois en < 500ms — la 2e action serait redondante
+  /// et ferait echouer la 2e API call en 4xx ("deja confirmee") ce qui
+  /// remontait une fausse erreur dans l'UI).
+  Future<QueuedAction?> findInFlightAction({
+    required QueuedActionType type,
+    required int orderId,
+  }) {
+    return (select(queuedActions)
+          ..where(($QueuedActionsTable t) =>
+              t.type.equalsValue(type) &
+              t.orderId.equals(orderId) &
+              (t.status.equalsValue(QueuedActionStatus.pending) |
+                  t.status.equalsValue(QueuedActionStatus.syncing)))
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   Future<void> enqueueAction({
     required String id,
     required QueuedActionType type,

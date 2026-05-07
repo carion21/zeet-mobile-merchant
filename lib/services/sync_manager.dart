@@ -255,6 +255,28 @@ class SyncManager {
     required Map<String, dynamic> payload,
     required Future<Order> Function() executor,
   }) async {
+    // 0. Dedup : si une action du meme type/orderId est deja en vol
+    //    (pending ou syncing), on retourne immediatement le state local
+    //    sans enqueue. Empeche le double-tap "Confirmer" qui faisait
+    //    echouer la 2e API call en 4xx ("deja confirmee") -> fausse
+    //    erreur affichee a l'user sur un succes effectif.
+    final QueuedAction? existing = await _db.findInFlightAction(
+      type: type,
+      orderId: orderId,
+    );
+    if (existing != null) {
+      debugPrint(
+        '[SyncManager] dedup: ${type.name} order=$orderId already inflight '
+        '(action=${existing.id} status=${existing.status.name})',
+      );
+      final OrdersCacheData? row = await _db.getOrderById(orderId);
+      final Order opt = row != null
+          ? (OrderCacheSerializer.decode(row.payload) ??
+              Order(id: orderId, statusValue: newStatus))
+          : Order(id: orderId, statusValue: newStatus);
+      return OptimisticResult(order: opt, queuedLocally: true);
+    }
+
     // 1. Charge l'entree cache.
     final OrdersCacheData? row = await _db.getOrderById(orderId);
     Order optimistic;

@@ -12,8 +12,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class SlideToAcceptButton extends StatefulWidget {
   final String label;
@@ -84,10 +84,10 @@ class _SlideToAcceptButtonState extends State<SlideToAcceptButton>
     if (_dragX / _maxDrag >= _completionThreshold) {
       _completed = true;
       setState(() => _dragX = _maxDrag);
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       widget.onCompleted();
     } else {
-      HapticFeedback.selectionClick();
+      ZeetHaptics.tap();
       _resetController.forward(from: 0);
     }
   }

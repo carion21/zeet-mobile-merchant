@@ -12,7 +12,6 @@
 // statut chip haut-droite, haptic sur envoi.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -52,21 +51,21 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
   }
 
   Future<void> _refresh() async {
-    await HapticFeedback.lightImpact();
+    await ZeetHaptics.success();
     await ref.read(ticketDetailProvider(widget.ticketId).notifier).refresh();
   }
 
   Future<void> _sendMessage() async {
     final String body = _composerController.text.trim();
     if (body.isEmpty) return;
-    await HapticFeedback.mediumImpact();
+    await ZeetHaptics.warning();
     final bool ok = await ref
         .read(ticketDetailProvider(widget.ticketId).notifier)
         .sendMessage(body);
     if (!mounted) return;
     if (ok) {
       _composerController.clear();
-      await HapticFeedback.lightImpact();
+      await ZeetHaptics.success();
       // Scroll vers le dernier message
       await Future<void>.delayed(const Duration(milliseconds: 50));
       if (_scrollController.hasClients) {

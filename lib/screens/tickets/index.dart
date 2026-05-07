@@ -8,7 +8,6 @@
 // Atteignable en 2 taps depuis Home (Profile → Aide et support).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -55,7 +54,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   }
 
   Future<void> _refresh() async {
-    await HapticFeedback.lightImpact();
+    await ZeetHaptics.success();
     await ref.read(ticketsListProvider.notifier).refresh();
   }
 
@@ -66,7 +65,7 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
   }
 
   void _openCreate() {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     Routes.push(const CreateTicketScreen());
   }
 
@@ -169,7 +168,7 @@ class _FilterSegmented extends ConsumerWidget {
               child: InkWell(
                 borderRadius: ZeetRadius.brSm,
                 onTap: () {
-                  HapticFeedback.selectionClick();
+                  ZeetHaptics.tap();
                   ref.read(ticketsListProvider.notifier).setFilter(f);
                 },
                 child: Container(

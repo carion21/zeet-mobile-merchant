@@ -18,7 +18,6 @@
 // on clôt).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -86,7 +85,7 @@ class HomeCloseServiceCta extends ConsumerWidget {
     // Haptic tap seulement (pas warning) : l'ouverture du recap n'est
     // pas destructive, la fermeture effective a lieu via "Terminer" sur
     // le recap lui-meme.
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     Routes.push(
       const ServiceClosedRecapScreen(),
       style: ZeetTransitionStyle.sharedAxisVertical,

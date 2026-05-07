@@ -172,13 +172,28 @@ class OrderItemOption {
 
   factory OrderItemOption.fromJson(Map<String, dynamic> json) {
     return OrderItemOption(
-      id: json['id'] as int? ?? 0,
-      optionItemId: json['option_item_id'] as int? ?? json['id'] as int? ?? 0,
+      id: _asIntOrZero(json['id']),
+      // Backend peut renvoyer option_item_id en int ou en string (cas vu
+      // sur certains anciens endpoints). Le `as int?` brut throw une
+      // FormatException sur string -> crash parsing.
+      optionItemId: _asIntOrZero(json['option_item_id']) != 0
+          ? _asIntOrZero(json['option_item_id'])
+          : _asIntOrZero(json['id']),
       name: json['name'] as String?,
-      price: json['price'] != null ? (json['price'] as num).toDouble() : null,
-      quantity: json['quantity'] as int? ?? 1,
+      price: json['price'] is num ? (json['price'] as num).toDouble() : null,
+      quantity: _asIntOrZero(json['quantity']) > 0
+          ? _asIntOrZero(json['quantity'])
+          : 1,
     );
   }
+}
+
+int _asIntOrZero(dynamic v) {
+  if (v == null) return 0;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v) ?? 0;
+  return 0;
 }
 
 /// Item d'une commande.

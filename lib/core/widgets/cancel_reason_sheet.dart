@@ -12,7 +12,6 @@
 // Voir aussi : `zeet-micro-copy` §4 (tone partner pro + description impact).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 /// Affiche le bottom sheet et retourne le motif choisi, ou `null`
@@ -62,7 +61,7 @@ class _CancelReasonSheetState extends State<_CancelReasonSheet> {
   }
 
   void _onSelectPreset(String reason) {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     setState(() {
       _selectedReason = reason;
       _step = _Step.confirmSwipe;
@@ -70,14 +69,14 @@ class _CancelReasonSheetState extends State<_CancelReasonSheet> {
   }
 
   void _onOpenFreeText() {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     setState(() => _showFreeText = true);
   }
 
   void _onSubmitFreeText() {
     final String trimmed = _controller.text.trim();
     if (trimmed.isEmpty) return;
-    HapticFeedback.mediumImpact();
+    ZeetHaptics.warning();
     setState(() {
       _selectedReason = trimmed;
       _step = _Step.confirmSwipe;
@@ -90,7 +89,7 @@ class _CancelReasonSheetState extends State<_CancelReasonSheet> {
   }
 
   void _onBackToReason() {
-    HapticFeedback.selectionClick();
+    ZeetHaptics.tap();
     setState(() => _step = _Step.pickReason);
   }
 

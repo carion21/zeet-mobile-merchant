@@ -667,7 +667,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final notifier = ref.read(orderDetailProvider(order.id).notifier);
     final success = await notifier.confirm(order.id);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(context: context, message: 'Commande confirmée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -688,7 +688,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final success =
         await notifier.cancel(order.id, cancelReason: reason);
     if (success && mounted) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showWarning(context: context, message: 'Commande refusée');
       ref.read(ordersListProvider.notifier).refresh();
     } else if (mounted) {
@@ -705,7 +705,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         .markPreparing(order.id);
     if (!mounted) return;
     if (success) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
           context: context, message: 'Préparation lancée');
       ref.read(ordersListProvider.notifier).refresh();
@@ -722,7 +722,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         .markReady(order.id);
     if (!mounted) return;
     if (success) {
-      HapticFeedback.heavyImpact();
+      ZeetHaptics.heavy();
       AppToast.showSuccess(
         context: context,
         message: 'Commande prête pour collecte',

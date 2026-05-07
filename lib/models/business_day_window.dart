@@ -26,10 +26,21 @@ class BusinessDayWindow {
   });
 
   factory BusinessDayWindow.fromJson(Map<String, dynamic> json) {
+    final int cutoffHour = (json['cutoff_hour'] as num?)?.toInt() ?? 4;
+    // tryParse : si le backend renvoie une date malformee, on ne crash
+    // pas le parsing du dashboard — on retombe sur le fallback local
+    // (fenetre 04h-04h alignee sur l'heure courante).
+    final DateTime? start =
+        DateTime.tryParse(json['start']?.toString() ?? '')?.toLocal();
+    final DateTime? end =
+        DateTime.tryParse(json['end']?.toString() ?? '')?.toLocal();
+    if (start == null || end == null) {
+      return BusinessDayWindow.fallback(cutoffHour: cutoffHour);
+    }
     return BusinessDayWindow(
-      cutoffHour: (json['cutoff_hour'] as num?)?.toInt() ?? 4,
-      start: DateTime.parse(json['start'] as String).toLocal(),
-      end: DateTime.parse(json['end'] as String).toLocal(),
+      cutoffHour: cutoffHour,
+      start: start,
+      end: end,
     );
   }
 

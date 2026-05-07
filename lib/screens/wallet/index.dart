@@ -9,7 +9,6 @@
 // Regles : composants Zeet*, pas de couleur en dur, haptic sur actions critiques.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -437,7 +436,7 @@ class _WalletEntryTile extends StatelessWidget {
             ),
             onTap: () {
               // Haptic fort (revert: remettre enableHaptic: true + supprimer onTap).
-              HapticFeedback.heavyImpact();
+              ZeetHaptics.heavy();
               showTransactionDetailSheet(ctx, entry);
             },
             child: Row(
