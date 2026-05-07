@@ -103,6 +103,8 @@ abstract class ProductEndpoints {
   static String delete(String id) => '/partner/products/$id';
   static String duplicate(String id) => '/partner/products/$id/duplicate';
   static String pictures(String id) => '/partner/products/$id/pictures';
+  static String picturesBatch(String id) =>
+      '/partner/products/$id/pictures/batch';
   static String deletePicture(String productId, String pictureId) =>
       '/partner/products/$productId/pictures/$pictureId';
   static String stats(String id) => '/partner/products/$id/stats';
@@ -151,7 +153,9 @@ abstract class OrderEndpoints {
   static const String statuses = '/partner/orders/select/statuses';
   static const String transitions = '/partner/orders/transitions';
   static const String actions = '/partner/orders/actions';
+  static const String bulkAccept = '/partner/orders/bulk-accept';
   static String get(String id) => '/partner/orders/$id';
+  static String receipt(String id) => '/partner/orders/$id/receipt';
   static String confirm(String id) => '/partner/orders/$id/confirm';
   static String preparing(String id) => '/partner/orders/$id/preparing';
   static String ready(String id) => '/partner/orders/$id/ready';

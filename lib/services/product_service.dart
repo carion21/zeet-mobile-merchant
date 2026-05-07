@@ -248,6 +248,70 @@ class ProductService {
   }
 
   // ---------------------------------------------------------------------------
+  // POST /v1/partner/products/:id/pictures/batch
+  // ---------------------------------------------------------------------------
+  /// Upload jusqu'a 8 images simultanement pour un produit. Atomicite par
+  /// fichier : un echec n'arrete pas le batch. Le serveur renvoie
+  /// `{ pictures: [...], failed_count, failed_files }` — l'UI peut
+  /// afficher un toast intelligent ("3 OK · 1 echec : foo.gif").
+  Future<({List<ProductPicture> pictures, int failedCount, List<String> failedFiles})>
+      uploadPicturesBatch(int productId, List<File> imageFiles) async {
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ProductEndpoints.picturesBatch(productId.toString())}',
+    );
+    final token = await _tokenService.getAccessToken();
+
+    final stopwatch = Stopwatch()..start();
+    final request = http.MultipartRequest('POST', url);
+    if (token != null && token.isNotEmpty) {
+      request.headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
+    }
+    request.headers[HttpHeaders.acceptHeader] = 'application/json';
+    for (final f in imageFiles) {
+      request.files.add(await http.MultipartFile.fromPath('files', f.path));
+    }
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      stopwatch.stop();
+
+      final body = response.body.isNotEmpty
+          ? jsonDecode(response.body) as Map<String, dynamic>
+          : <String, dynamic>{};
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data = body['data'] as Map<String, dynamic>? ?? <String, dynamic>{};
+        final pictureList = (data['pictures'] as List?)
+                ?.whereType<Map<String, dynamic>>()
+                .map(ProductPicture.fromJson)
+                .toList() ??
+            const <ProductPicture>[];
+        final failedFiles = (data['failed_files'] as List?)
+                ?.whereType<String>()
+                .toList() ??
+            const <String>[];
+        return (
+          pictures: pictureList,
+          failedCount: (data['failed_count'] as int?) ?? failedFiles.length,
+          failedFiles: failedFiles,
+        );
+      }
+
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: body['message'] is String
+            ? body['message'] as String
+            : 'Erreur lors de l\'upload batch',
+      );
+    } catch (e) {
+      stopwatch.stop();
+      if (e is ApiException) rethrow;
+      rethrow;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /v1/partner/products/:id/pictures
   // ---------------------------------------------------------------------------
   /// Recupere la liste des images d'un produit (URLs MinIO presignees).

@@ -16,6 +16,7 @@ import 'package:merchant/core/widgets/order_code_text.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/core/utils/phone_launcher.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:merchant/services/order_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 class OrdersScreen extends ConsumerStatefulWidget {
@@ -39,6 +40,63 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   Timer? _searchDebounce;
+
+  // Selection multi-commandes pour bulk-accept (skill zeet-pos-ergonomics
+  // §gesture-grammar). Long-press sur tile pending = entre en selection,
+  // tap toggle, action bar bottom = "Confirmer X commandes".
+  final Set<int> _selectedIds = <int>{};
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+  bool _bulkSubmitting = false;
+
+  void _toggleSelection(int orderId) {
+    setState(() {
+      if (_selectedIds.contains(orderId)) {
+        _selectedIds.remove(orderId);
+      } else {
+        _selectedIds.add(orderId);
+      }
+    });
+    ZeetHaptics.tap();
+  }
+
+  void _exitSelection() {
+    setState(_selectedIds.clear);
+  }
+
+  Future<void> _bulkAccept() async {
+    if (_selectedIds.isEmpty) return;
+    final List<int> ids = _selectedIds.toList();
+    setState(() => _bulkSubmitting = true);
+    ZeetHaptics.warning();
+    try {
+      final result = await OrderService().bulkAcceptOrders(ids);
+      if (!mounted) return;
+      final int success = (result['success_count'] as int?) ?? 0;
+      final int failed = (result['failed_count'] as int?) ?? 0;
+      ZeetHaptics.heavy();
+      if (failed == 0) {
+        AppToast.showSuccess(
+          context: context,
+          message: '$success commande${success > 1 ? "s" : ""} confirmée${success > 1 ? "s" : ""}',
+        );
+      } else {
+        AppToast.showWarning(
+          context: context,
+          message: '$success OK · $failed échec${failed > 1 ? "s" : ""}',
+        );
+      }
+      _exitSelection();
+      await ref.read(ordersListProvider.notifier).resetAndLoad();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.showError(
+        context: context,
+        message: 'Échec bulk-accept : ${e.toString()}',
+      );
+    } finally {
+      if (mounted) setState(() => _bulkSubmitting = false);
+    }
+  }
 
   /// Statuts "en cours" côté partner — alignés sur le state machine backend
   /// (cf. `ORDERS_PARTNER_FLOW.md` §8). On inclut aussi les variantes client
@@ -179,15 +237,27 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: ZeetAppBar(
-        title: const Text('Mes commandes'),
+        leading: _selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Annuler la sélection',
+                onPressed: _exitSelection,
+              )
+            : null,
+        title: Text(
+          _selectionMode
+              ? '${_selectedIds.length} sélectionnée${_selectedIds.length > 1 ? "s" : ""}'
+              : 'Mes commandes',
+        ),
         actions: <Widget>[
-          IconButton(
-            tooltip: _searchActive ? 'Fermer la recherche' : 'Rechercher',
-            icon: Icon(
-              _searchActive ? Icons.close_rounded : Icons.search_rounded,
+          if (!_selectionMode)
+            IconButton(
+              tooltip: _searchActive ? 'Fermer la recherche' : 'Rechercher',
+              icon: Icon(
+                _searchActive ? Icons.close_rounded : Icons.search_rounded,
+              ),
+              onPressed: _toggleSearch,
             ),
-            onPressed: _toggleSearch,
-          ),
         ],
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(56.h),
@@ -278,6 +348,13 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
           ),
         ],
       ),
+      bottomNavigationBar: _selectionMode
+          ? _BulkActionBar(
+              selectedCount: _selectedIds.length,
+              submitting: _bulkSubmitting,
+              onConfirm: _bulkAccept,
+            )
+          : null,
     );
   }
 
@@ -420,21 +497,35 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
         order.orderStatus?.displayLabel ?? _fallbackStatusLabel(order.status);
     final String code = order.code ?? '#${order.id}';
 
+    final bool isPending = order.status == 'pending';
+    final bool isSelected = _selectedIds.contains(order.id);
+
     return GestureDetector(
       onTap: () {
         ZeetHaptics.tap();
-        Routes.pushOrderDetails(order.id);
+        if (_selectionMode) {
+          // En mode selection : tap toggle uniquement les commandes pending
+          // (bulk-accept ne s'applique qu'aux commandes en attente de
+          // confirmation). Les autres tiles ne reagissent pas en selection.
+          if (isPending) _toggleSelection(order.id);
+        } else {
+          Routes.pushOrderDetails(order.id);
+        }
       },
+      onLongPress: isPending ? () => _toggleSelection(order.id) : null,
       child: Container(
         margin: EdgeInsets.only(bottom: 16.h),
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: surfaceColor,
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.06)
+              : surfaceColor,
           borderRadius: BorderRadius.circular(12.r),
-          // DS ZEET §2 : pas de BoxShadow sur cards, border à la place.
           border: Border.all(
-            color: scheme.outlineVariant,
-            width: 1,
+            color: isSelected
+                ? AppColors.primary
+                : scheme.outlineVariant,
+            width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Column(
@@ -1105,6 +1196,44 @@ class _OrderCodeChip extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BulkActionBar extends StatelessWidget {
+  const _BulkActionBar({
+    required this.selectedCount,
+    required this.submitting,
+    required this.onConfirm,
+  });
+
+  final int selectedCount;
+  final bool submitting;
+  final Future<void> Function() onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 12.h),
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border(
+            top: BorderSide(color: scheme.outlineVariant, width: 1),
+          ),
+        ),
+        child: ZeetButton.primary(
+          label: submitting
+              ? 'Confirmation en cours…'
+              : 'Confirmer $selectedCount commande${selectedCount > 1 ? "s" : ""}',
+          icon: Icons.done_all_rounded,
+          size: ZeetButtonSize.lg,
+          fullWidth: true,
+          loading: submitting,
+          onPressed: submitting ? null : onConfirm,
         ),
       ),
     );

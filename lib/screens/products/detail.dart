@@ -30,6 +30,7 @@ import 'package:merchant/screens/products/widgets/product_edit_sheet.dart';
 import 'package:merchant/screens/products/widgets/product_option_group_form_sheet.dart';
 import 'package:merchant/screens/products/widgets/product_option_item_form_sheet.dart';
 import 'package:merchant/screens/products/widgets/product_variant_form_sheet.dart';
+import 'package:merchant/services/product_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
@@ -243,25 +244,63 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 
   Future<void> _uploadPicture(Product product) async {
-    final XFile? picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+    // Multi-pick : permet de selectionner jusqu'a 8 images d'un coup. Le
+    // backend `/pictures/batch` upload tout en parallele avec atomicite
+    // par fichier (skill `zeet-pos-ergonomics` §catalog-bulk).
+    final List<XFile> picked = await ImagePicker().pickMultiImage(
       maxWidth: 1600,
       maxHeight: 1600,
       imageQuality: 85,
+      limit: 8,
     );
-    if (picked == null || !mounted) return;
+    if (picked.isEmpty || !mounted) return;
 
-    final File file = File(picked.path);
-    final bool ok = await ref
-        .read(productDetailProvider.notifier)
-        .uploadPicture(product.id, file);
-    if (!mounted) return;
-    if (ok) {
-      AppToast.showSuccess(context: context, message: 'Image ajoutee');
-    } else {
+    if (picked.length == 1) {
+      // Single = ancien chemin (endpoint legacy non touche)
+      final File file = File(picked.first.path);
+      final bool ok = await ref
+          .read(productDetailProvider.notifier)
+          .uploadPicture(product.id, file);
+      if (!mounted) return;
+      if (ok) {
+        AppToast.showSuccess(context: context, message: 'Image ajoutee');
+      } else {
+        AppToast.showError(
+          context: context,
+          message: 'Impossible d\'uploader l\'image',
+        );
+      }
+      return;
+    }
+
+    // Multi : appel direct au service batch + reload galerie
+    final List<File> files = picked.map((x) => File(x.path)).toList();
+    try {
+      final result = await ProductService().uploadPicturesBatch(
+        product.id,
+        files,
+      );
+      if (!mounted) return;
+      // Refresh detail product pour rafraichir la galerie
+      await ref.read(productDetailProvider.notifier).load(product.id);
+      if (!mounted) return;
+      if (result.failedCount == 0) {
+        AppToast.showSuccess(
+          context: context,
+          message: '${result.pictures.length} image${result.pictures.length > 1 ? "s" : ""} ajoutée${result.pictures.length > 1 ? "s" : ""}',
+        );
+      } else {
+        AppToast.showWarning(
+          context: context,
+          message:
+              '${result.pictures.length} OK · ${result.failedCount} échec${result.failedCount > 1 ? "s" : ""}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       AppToast.showError(
         context: context,
-        message: 'Impossible d\'uploader l\'image',
+        message: 'Échec upload batch : ${e.toString()}',
       );
     }
   }

@@ -1,6 +1,8 @@
+import 'package:http/http.dart' as http;
 import 'package:merchant/core/constants/api.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/services/api_client.dart';
+import 'package:merchant/services/token_service.dart';
 
 /// Service pour les operations sur les commandes partner.
 /// Encapsule les appels aux 12 endpoints `/v1/partner/orders/*`.
@@ -186,6 +188,69 @@ class OrderService {
   /// L'appel utilise un `Idempotency-Key` stable (UUID v4 persiste 24h) pour
   /// garantir que retry reseau ou double-tap ne provoque pas de doublon
   /// serveur. Cle logique : `order:{id}:confirm`.
+  // ---------------------------------------------------------------------------
+  // GET /v1/partner/orders/:id/receipt
+  // ---------------------------------------------------------------------------
+  /// Recupere le bon de livraison HTML d'une commande livree ou remboursee.
+  /// Le serveur renvoie un HTML auto-contenu (CSS inline) imprimable. Une
+  /// version PDF arrivera en follow-up backend (puppeteer / pdfkit).
+  ///
+  /// Erreurs : 409 si la commande n'est pas dans un statut terminal,
+  /// 403 si pas a moi, 404 si introuvable. Bypass le pipeline JSON
+  /// d'ApiClient car la reponse est `text/html` brut.
+  Future<String> fetchReceiptHtml(int orderId) async {
+    final token = await TokenService.instance.getAccessToken();
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${OrderEndpoints.receipt(orderId.toString())}',
+    );
+    final response = await http.get(
+      url,
+      headers: <String, String>{
+        if (token != null) 'Authorization': 'Bearer $token',
+        'Accept': 'text/html',
+      },
+    ).timeout(const Duration(seconds: 30));
+
+    if (response.statusCode == 200) {
+      return response.body;
+    }
+    throw ApiException.fromStatus(
+      statusCode: response.statusCode,
+      message: response.body.isNotEmpty
+          ? response.body
+          : 'Erreur ${response.statusCode}',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /v1/partner/orders/bulk-accept
+  // ---------------------------------------------------------------------------
+  /// Confirme plusieurs commandes simultanement (max 20 IDs).
+  ///
+  /// Atomicite par commande : un echec n'arrete pas le batch. Le serveur
+  /// renvoie `success_count`, `failed_count`, `results` (commandes OK) et
+  /// `failed_results` (avec code metier ERR_ORDER_NOT_YOURS / NOT_FOUND /
+  /// TRANSITION_INVALID).
+  ///
+  /// Idempotency-Key : sha256 trie des IDs + estimatedMinutes pour qu'un
+  /// retry exact = meme reponse (pas de double-confirm).
+  Future<Map<String, dynamic>> bulkAcceptOrders(
+    List<int> orderIds, {
+    int estimatedMinutes = 25,
+  }) async {
+    final sortedIds = List<int>.from(orderIds)..sort();
+    final response = await _apiClient.post(
+      OrderEndpoints.bulkAccept,
+      body: <String, dynamic>{
+        'order_ids': sortedIds,
+        'estimated_minutes': estimatedMinutes,
+      },
+      idempotencyLogicalKey:
+          'orders:bulk-accept:${sortedIds.join(",")}:$estimatedMinutes',
+    );
+    return response['data'] as Map<String, dynamic>;
+  }
+
   Future<Order> confirmOrder(int orderId, {int estimatedMinutes = 30}) async {
     final response = await _apiClient.post(
       OrderEndpoints.confirm(orderId.toString()),

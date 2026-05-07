@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/models/order_model.dart';
+import 'package:merchant/screens/order_details/receipt_screen.dart';
 import 'package:merchant/screens/order_details/widgets/address_section.dart';
 import 'package:merchant/screens/order_details/widgets/client_section.dart';
 import 'package:merchant/screens/order_details/widgets/items_section.dart';
@@ -20,6 +21,8 @@ import 'package:merchant/screens/order_details/widgets/logs_section.dart';
 import 'package:merchant/screens/order_details/widgets/order_code_header.dart';
 import 'package:merchant/screens/order_details/widgets/order_status_strip.dart';
 import 'package:merchant/screens/order_details/widgets/summary_section.dart';
+import 'package:merchant/services/navigation_service.dart';
+import 'package:zeet_ui/zeet_ui.dart';
 
 class TerminalLayout extends StatelessWidget {
   const TerminalLayout({super.key, required this.order});
@@ -53,6 +56,25 @@ class TerminalLayout extends StatelessWidget {
           if (order.logs.isNotEmpty || order.timings != null) ...<Widget>[
             Divider(color: dividerColor, height: 32.h),
             LogsSection(order: order),
+          ],
+          // Bouton "Télécharger le reçu" disponible uniquement sur les
+          // commandes livrees / remboursees (le backend renvoie 409 sinon).
+          if (order.status == 'delivered' || order.status == 'refunded') ...<Widget>[
+            SizedBox(height: 24.h),
+            ZeetButton.ghost(
+              label: 'Voir le reçu',
+              icon: Icons.receipt_long_rounded,
+              size: ZeetButtonSize.lg,
+              onPressed: () {
+                ZeetHaptics.tap();
+                Routes.push(
+                  OrderReceiptScreen(
+                    orderId: order.id,
+                    orderCode: order.code,
+                  ),
+                );
+              },
+            ),
           ],
           SizedBox(height: 24.h),
         ],
