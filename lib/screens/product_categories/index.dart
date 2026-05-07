@@ -174,9 +174,10 @@ class _ProductCategoriesScreenState
               (state.status == CategoriesListStatus.loadingMore ? 1 : 0),
           itemBuilder: (BuildContext context, int index) {
             if (index == state.categories.length) {
+              // Skeleton > spinner (skill `zeet-motion-system` §9).
               return const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
+                padding: EdgeInsets.all(8),
+                child: ZeetSkeleton(width: double.infinity, height: 88),
               );
             }
             return _CategoryTile(

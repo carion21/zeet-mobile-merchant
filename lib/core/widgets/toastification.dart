@@ -1,5 +1,6 @@
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
 
@@ -66,8 +67,8 @@ class AppToast {
       style: ToastificationStyle.minimal,
       alignment: Alignment.topCenter,
       autoCloseDuration: duration,
-      // Seuil POS : 200ms max pour ne pas ralentir la perception (zeet-pos-ergonomics).
-      animationDuration: const Duration(milliseconds: 200),
+      // Seuil POS : ZeetDuration.std (200ms) — ne ralentit pas la perception.
+      animationDuration: ZeetDuration.std,
       animationBuilder: (context, animation, alignment, child) {
         return FadeTransition(
           opacity: animation,

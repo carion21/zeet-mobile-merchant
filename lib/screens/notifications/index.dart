@@ -202,10 +202,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   const SizedBox(height: ZeetSpacing.x2),
               itemBuilder: (BuildContext context, int index) {
                 if (index >= items.length) {
+                  // Skeleton > spinner (skill `zeet-motion-system` §9 :
+                  // skeleton maintient le layout, spinner casse la lecture).
                   return const Padding(
                     padding:
-                        EdgeInsets.symmetric(vertical: ZeetSpacing.x3),
-                    child: Center(child: CircularProgressIndicator()),
+                        EdgeInsets.symmetric(vertical: ZeetSpacing.x2),
+                    child: ZeetSkeleton(width: double.infinity, height: 80),
                   );
                 }
                 final NotificationItem n = items[index];

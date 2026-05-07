@@ -5,6 +5,7 @@ import 'package:merchant/models/payout_model.dart';
 import 'package:merchant/providers/wallet_provider.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/payout_service.dart';
+import 'package:merchant/services/sync_manager.dart';
 
 // ---------------------------------------------------------------------------
 // State
@@ -146,22 +147,44 @@ class PayoutsListNotifier extends StateNotifier<PayoutsListState> {
   }
 
   /// Cree une nouvelle demande de virement.
-  /// En cas de succes : insere en tete de la liste + rafraichit le solde wallet.
+  ///
+  /// Route via `SyncManager.optimisticRequestPayout` qui :
+  ///  - Idempotency-Key automatique (cf. payout_service.dart)
+  ///  - Tente immediatement si online
+  ///  - Enqueue dans Drift offline queue si le reseau est coupe
+  ///  - Retry exponentiel + dead letter 10 essais sur 5xx/timeout
+  ///
+  /// En cas de succes immediat : recharge la liste serveur pour avoir
+  /// le payout fraichement cree (avec uuid + status backend) — la
+  /// methode optimisticRequestPayout ne renvoie pas le Payout, elle
+  /// renvoie un bool "sync immediate OK".
   Future<Payout?> create(CreatePayoutRequest request) async {
     state = state.copyWith(isCreating: true, clearError: true);
     try {
-      final payout = await _service.create(request);
+      final synced = await SyncManager.instance.optimisticRequestPayout(
+        amount: request.amount,
+        note: request.note,
+      );
+      if (synced) {
+        // Sync immediate OK — recharger la page 1 pour avoir le nouveau
+        // payout en tete de liste (le serveur retourne uuid + status reels).
+        await load();
+        try {
+          await _ref.read(walletProvider.notifier).loadBalance();
+        } catch (e) {
+          debugPrint('[PayoutsProvider] wallet refresh failed: $e');
+        }
+        state = state.copyWith(isCreating: false);
+        return state.payouts.isNotEmpty ? state.payouts.first : null;
+      }
+      // Action en queue offline ou echec metier — UI doit afficher
+      // "Enregistre, sera envoye au retour reseau" (cf. PartnerConnectivityBanner).
       state = state.copyWith(
         isCreating: false,
-        payouts: <Payout>[payout, ...state.payouts],
+        errorMessage:
+            'Demande enregistree localement. On l\'envoie des que le reseau revient.',
       );
-      // Le solde du wallet a probablement bouge — on le rafraichit.
-      try {
-        await _ref.read(walletProvider.notifier).loadBalance();
-      } catch (e) {
-        debugPrint('[PayoutsProvider] wallet refresh after create failed: $e');
-      }
-      return payout;
+      return null;
     } on ApiException catch (e) {
       debugPrint('[PayoutsProvider] create failed: $e');
       state = state.copyWith(
@@ -179,19 +202,40 @@ class PayoutsListNotifier extends StateNotifier<PayoutsListState> {
     }
   }
 
-  /// Valide une demande de virement.
-  /// En cas de succes : remplace l'item dans la liste.
+  /// Valide une demande de virement (uuid).
+  ///
+  /// Route via `SyncManager.optimisticValidatePayout` (meme benefices
+  /// retry/offline que `create`). Si succes immediat, recharge le payout
+  /// par UUID pour mettre a jour son status local.
   Future<Payout?> validate(String uuid, {String? code}) async {
     state = state.copyWith(isValidating: true, clearError: true);
     try {
-      final updated = await _service.validate(uuid, code: code);
+      final synced = await SyncManager.instance.optimisticValidatePayout(
+        uuid: uuid,
+        code: code,
+      );
+      if (synced) {
+        // Recharge le payout par uuid pour avoir status mis a jour.
+        try {
+          final updated = await _service.getByUuid(uuid);
+          state = state.copyWith(
+            isValidating: false,
+            payouts: state.payouts
+                .map((p) => p.uuid == uuid ? updated : p)
+                .toList(),
+          );
+          return updated;
+        } catch (_) {
+          state = state.copyWith(isValidating: false);
+          return null;
+        }
+      }
       state = state.copyWith(
         isValidating: false,
-        payouts: state.payouts
-            .map((p) => p.uuid == uuid ? updated : p)
-            .toList(),
+        errorMessage:
+            'Validation enregistree localement. On l\'envoie des que le reseau revient.',
       );
-      return updated;
+      return null;
     } on ApiException catch (e) {
       debugPrint('[PayoutsProvider] validate failed: $e');
       state = state.copyWith(

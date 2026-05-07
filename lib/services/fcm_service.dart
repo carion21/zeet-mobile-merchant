@@ -16,6 +16,7 @@
 //    LocalNotificationService (qui reinit le plugin dans le nouvel isolate).
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -114,9 +115,9 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
     'order.cancelled', // alias retrocompat
   };
   if (transitionTypes.contains(type)) {
-    final String title = (data['title']?.toString().isNotEmpty ?? false)
-        ? data['title'].toString()
-        : _defaultTransitionTitle(type);
+    // Format dense : `Annulee client · ZT-... · 12 500 FCFA` quand le payload
+    // permet d'enrichir. Fallback sur le title backend ou un libelle generique.
+    final String title = _buildCancelTransitionTitle(data, type);
     final String body = (data['body']?.toString().isNotEmpty ?? false)
         ? data['body'].toString()
         : 'Appuyez pour voir la commande';
@@ -126,6 +127,51 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
       payloadData: data,
     );
   }
+}
+
+/// Construit un titre dense pour les transitions `order.cancelled_*`.
+/// Format prefere : `Annulee client · ZT-... · 12 500 FCFA`.
+/// Skill `zeet-notification-strategy` §3.
+String _buildCancelTransitionTitle(Map<String, dynamic> data, String type) {
+  // Parse defensif metadata pour total + code, comme _buildIncomingOrderTitle.
+  int? totalFcfa;
+  String? orderCode;
+  final dynamic meta = data['metadata'];
+  Map<String, dynamic>? metaMap;
+  if (meta is Map) {
+    metaMap = Map<String, dynamic>.from(meta);
+  } else if (meta is String && meta.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(meta);
+      if (decoded is Map) metaMap = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+  }
+  totalFcfa = (metaMap?['total_fcfa'] ?? metaMap?['total']) as int? ??
+      (data['total_fcfa'] ?? data['total']) as int?;
+  orderCode = (metaMap?['order_code'] ?? data['order_code']) as String?;
+
+  final String prefix = type == 'order.cancelled_by_customer'
+      ? 'Annulee client'
+      : type == 'order.cancelled_by_admin'
+          ? 'Annulee ZEET'
+          : 'Annulee';
+  final List<String> parts = <String>[prefix];
+  if (orderCode != null && orderCode.isNotEmpty) parts.add(orderCode);
+  if ((totalFcfa ?? 0) > 0) {
+    final s = totalFcfa.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    parts.add('${buf.toString()} FCFA');
+  }
+  if (parts.length == 1) {
+    final raw = data['title']?.toString();
+    if (raw != null && raw.isNotEmpty) return raw;
+    return _defaultTransitionTitle(type);
+  }
+  return parts.join(' · ');
 }
 
 /// Construit un titre de notif "nouvelle commande" dense et glanceable.

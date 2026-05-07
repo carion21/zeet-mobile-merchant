@@ -294,9 +294,10 @@ class _TicketsList extends ConsumerWidget {
           separatorBuilder: (_, __) => const SizedBox(height: ZeetSpacing.x2),
           itemBuilder: (BuildContext context, int index) {
             if (index >= filtered.length) {
+              // Skeleton > spinner (skill `zeet-motion-system` §9).
               return const Padding(
-                padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x3),
-                child: Center(child: CircularProgressIndicator()),
+                padding: EdgeInsets.symmetric(vertical: ZeetSpacing.x2),
+                child: ZeetSkeleton(width: double.infinity, height: 72),
               );
             }
             return _TicketTile(ticket: filtered[index]);

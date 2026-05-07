@@ -197,6 +197,13 @@ class _ServiceClosedRecapScreenState
                 children: <Widget>[
                   const SizedBox(height: ZeetSpacing.x4),
                   _Header(textColor: textColor, textMuted: textMuted),
+                  if (_isMilestone(orders)) ...<Widget>[
+                    const SizedBox(height: ZeetSpacing.x3),
+                    _MilestoneBadge(
+                      orders: orders,
+                      reduceMotion: reduceMotion,
+                    ),
+                  ],
                   const SizedBox(height: ZeetSpacing.x6),
                   Expanded(
                     child: ListView.separated(
@@ -495,5 +502,112 @@ class _StatTileState extends State<_StatTile> {
         ],
       ),
     );
+  }
+}
+
+/// Detecte les jalons "felicitation renforcee" (5e/10e/20e/50e cmde du jour).
+/// Skill `zeet-neuro-ux` §11 peak-end : valoriser les paliers significatifs
+/// sans crier a chaque commande (sinon dilution = fatigue UX).
+bool _isMilestone(int orders) {
+  return orders == 5 || orders == 10 || orders == 20 || orders == 50 ||
+      orders == 100;
+}
+
+/// Badge "jalon" — texte renforce + haptic supplementaire au mount.
+/// Pas de confetti (design intent service-closed §8 : sobre partner).
+/// Skill `zeet-tone-of-voice-fr` (vouvoiement, message varie selon palier).
+class _MilestoneBadge extends StatefulWidget {
+  const _MilestoneBadge({
+    required this.orders,
+    required this.reduceMotion,
+  });
+
+  final int orders;
+  final bool reduceMotion;
+
+  @override
+  State<_MilestoneBadge> createState() => _MilestoneBadgeState();
+}
+
+class _MilestoneBadgeState extends State<_MilestoneBadge> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Haptic supplementaire (s'ajoute au success() du parent) — souligne
+      // le palier sans crier.
+      ZeetHaptics.heavy();
+    });
+  }
+
+  String _message() {
+    switch (widget.orders) {
+      case 5:
+        return '5 services aujourd\'hui — solide.';
+      case 10:
+        return '10 services — belle journee.';
+      case 20:
+        return '20 services — service marathon.';
+      case 50:
+        return '50 services — record.';
+      case 100:
+        return '100 services — exceptionnel.';
+      default:
+        return '${widget.orders} services';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget badge = Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: ZeetSpacing.x3,
+        vertical: ZeetSpacing.x2,
+      ),
+      decoration: BoxDecoration(
+        color: ZeetColors.primary.withValues(alpha: 0.12),
+        borderRadius: const BorderRadius.all(
+          Radius.circular(ZeetRadius.pill),
+        ),
+        border: Border.all(
+          color: ZeetColors.primary.withValues(alpha: 0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(
+            Icons.local_fire_department_rounded,
+            color: ZeetColors.primary,
+            size: 16,
+          ),
+          const SizedBox(width: ZeetSpacing.x2),
+          Text(
+            _message(),
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (widget.reduceMotion) return badge;
+    return badge
+        .animate()
+        .fadeIn(
+          duration: const Duration(milliseconds: 400),
+          curve: ZeetCurves.decelerate,
+        )
+        .slideX(
+          begin: -0.1,
+          end: 0,
+          duration: const Duration(milliseconds: 400),
+          curve: ZeetCurves.decelerate,
+        );
   }
 }

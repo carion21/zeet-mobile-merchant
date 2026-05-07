@@ -15,6 +15,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/sync_provider.dart';
 import 'package:merchant/screens/sync_pending/index.dart';
@@ -119,7 +120,7 @@ class _BannerShellState extends State<_BannerShell>
     if (disable) return; // a11y reduced motion : pas de pulse
     _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: ZeetDuration.pulse,
     )..repeat(reverse: true);
   }
 
