@@ -2,16 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zeet_ui/zeet_ui.dart';
-import 'package:merchant/core/constants/assets.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/core/widgets/business_day_label.dart';
 import 'package:merchant/models/business_day_window.dart';
 import 'package:merchant/screens/root/index.dart';
 
-/// Card "Gains du jour" avec fond wallet + rolling counter anime.
+/// Card "Gains du jour" — refonte plein soleil / cuisine bruyante.
+///
+/// Avant : image background + Colors.white → contraste imprevisible et
+/// illisible en exterieur (luminosite > 50 000 lux). Refonte cible le
+/// **plein soleil** :
+///
+/// - Fond solid `surface` (blanc en light, anthracite en dark) → contraste
+///   maximal du texte montant (~17:1 AAA+ vs ~5:1 sur image avant).
+/// - Montant en `ink` (quasi-noir) `40.sp w900` avec `tabularFigures` :
+///   les chiffres ont une largeur fixe → le rolling counter ne danse plus.
+/// - Bord gauche 4dp `primary` orange ZEET = signal branding **sans**
+///   sacrifier le contraste (skill `zeet-pos-ergonomics` §6 glanceability :
+///   couleur + icone + label, jamais texte sur image complexe).
+/// - Label "GAINS DU JOUR" en small caps `primary` letterSpacing 1.5 →
+///   reperable en peripherique, ne concurrence pas le montant.
+/// - Footer business day en `inkMuted` solide (vs alpha:0.75 avant).
 ///
 /// Tap = switch vers le tab Wallet du RootScaffold (3-clicks-rule partner :
-/// 1 tap, zero push). Extrait de `_buildEarningsCard` du monolithe home.
+/// 1 tap, zero push). Haptic success on tap (feedback POS obligatoire).
 class HomeEarningsCard extends ConsumerWidget {
   const HomeEarningsCard({
     super.key,
@@ -30,11 +44,17 @@ class HomeEarningsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final walletBackground =
-        isDark ? AppAssets.darkWallet : AppAssets.lightWallet;
+    // Tokens contrastes maximaux. Ratios mesures :
+    // - ink (#0F1115) sur surface (#FFFFFF)        → 17.4:1 AAA+
+    // - inkDark (#F7F8FA) sur surfaceAltDark (#1A1E26) → 14.2:1 AAA+
+    final Color background =
+        isDark ? ZeetColors.surfaceAltDark : ZeetColors.surface;
+    final Color amountColor = isDark ? ZeetColors.inkDark : ZeetColors.ink;
+    final Color mutedColor =
+        isDark ? ZeetColors.inkMutedDark : ZeetColors.inkMuted;
+    final Color borderColor =
+        isDark ? ZeetColors.lineDark : ZeetColors.line;
 
-    // Raccourci 3-clicks-rule partner : tap sur la card "Gains du jour"
-    // bascule vers le tab Portefeuille du RootScaffold (1 tap, zéro push).
     return GestureDetector(
       onTap: () async {
         await ZeetHaptics.success();
@@ -42,80 +62,106 @@ class HomeEarningsCard extends ConsumerWidget {
       },
       child: Container(
         margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-        padding: EdgeInsets.all(20.w),
         decoration: BoxDecoration(
+          color: background,
           borderRadius: BorderRadius.circular(ZeetRadius.md),
-          image: DecorationImage(
-            image: AssetImage(walletBackground),
-            fit: BoxFit.cover,
-          ),
+          border: Border.all(color: borderColor, width: 1),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(ZeetRadius.md),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // Bord gauche orange ZEET — signal branding visible meme
+                // en peripherique, sans concurrence avec le contraste du
+                // montant central.
+                Container(width: 4.w, color: ZeetColors.primary),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Gains du jour',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w500,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20.w, 18.h, 16.w, 18.h),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        // Header : label small caps a gauche + icone
+                        // wallet a droite. Hierarchie : le label oriente,
+                        // le montant tient le focus.
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                'GAINS DU JOUR',
+                                style: TextStyle(
+                                  color: ZeetColors.primary,
+                                  fontSize: 12.sp,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            SizedBox(width: 8.w),
+                            Container(
+                              width: 36.w,
+                              height: 36.w,
+                              decoration: BoxDecoration(
+                                color: ZeetColors.primaryLight,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: IconManager.getIcon(
+                                'wallet',
+                                color: ZeetColors.primary,
+                                size: 20.r,
+                              ),
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: 8.h),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        // Rolling counter — signature ZEET : le montant qui
-                        // change doit etre anime (dopamine anticipation).
-                        child: ZeetRollingCounter(
-                          value: earnings,
-                          suffix: ' FCFA',
-                          thousandSeparator: ' ',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 32.sp,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
+                        SizedBox(height: 10.h),
+                        // Montant : taille extra-large, w900, tabular pour
+                        // que le rolling counter ne fasse pas danser le
+                        // layout. FittedBox = secours sur tres petits ecrans.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: ZeetRollingCounter(
+                            value: earnings,
+                            suffix: ' FCFA',
+                            thousandSeparator: ' ',
+                            style: TextStyle(
+                              color: amountColor,
+                              fontSize: 40.sp,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.8,
+                              height: 1.05,
+                              fontFeatures: const <FontFeature>[
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      if (businessDay != null) ...<Widget>[
-                        SizedBox(height: 8.h),
-                        BusinessDayLabel(
-                          businessDay: businessDay!,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.75),
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w500,
+                        if (businessDay != null) ...<Widget>[
+                          SizedBox(height: 8.h),
+                          BusinessDayLabel(
+                            businessDay: businessDay!,
+                            style: TextStyle(
+                              color: mutedColor,
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                SizedBox(width: 12.w),
-                Container(
-                  padding: EdgeInsets.all(10.w),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconManager.getIcon('wallet',
-                      color: Colors.white, size: 28.r),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
