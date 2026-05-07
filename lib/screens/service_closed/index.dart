@@ -32,6 +32,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:merchant/core/constants/copy.dart';
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/dashboard_model.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
@@ -226,20 +227,18 @@ class _ServiceClosedRecapScreenState
                         // `ZeetMotion.staggerPartner` = 0 (pas de stagger en
                         // POS standard) — on force 25ms ici car c'est un
                         // peak moment, pas un ecran operationnel.
-                        const Duration peakStagger =
-                            Duration(milliseconds: 25);
                         return tile
                             .animate()
                             .fadeIn(
                               duration: ZeetMotion.sm,
-                              delay: peakStagger * index,
+                              delay: ZeetDuration.peakStagger * index,
                               curve: ZeetCurves.decelerate,
                             )
                             .slideY(
                               begin: 0.1,
                               end: 0,
                               duration: ZeetMotion.sm,
-                              delay: peakStagger * index,
+                              delay: ZeetDuration.peakStagger * index,
                               curve: ZeetCurves.decelerate,
                             );
                       },
@@ -487,7 +486,7 @@ class _StatTileState extends State<_StatTile> {
                   value: widget.stat.value,
                   fractionDigits: widget.stat.fractionDigits,
                   suffix: widget.stat.suffix,
-                  duration: const Duration(milliseconds: 800),
+                  duration: ZeetDuration.celebrate,
                   curve: ZeetCurves.expressive,
                   style: TextStyle(
                     color: widget.textColor,
@@ -600,13 +599,13 @@ class _MilestoneBadgeState extends State<_MilestoneBadge> {
     return badge
         .animate()
         .fadeIn(
-          duration: const Duration(milliseconds: 400),
+          duration: ZeetDuration.notice,
           curve: ZeetCurves.decelerate,
         )
         .slideX(
           begin: -0.1,
           end: 0,
-          duration: const Duration(milliseconds: 400),
+          duration: ZeetDuration.notice,
           curve: ZeetCurves.decelerate,
         );
   }

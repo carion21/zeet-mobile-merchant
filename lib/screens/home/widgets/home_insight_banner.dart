@@ -21,6 +21,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:merchant/providers/cart_partner_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -123,9 +124,7 @@ class _HomeInsightBannerState extends ConsumerState<HomeInsightBanner> {
         ),
       ),
       child: AnimatedSwitcher(
-        duration: reduceMotion
-            ? const Duration(milliseconds: 0)
-            : const Duration(milliseconds: 400),
+        duration: reduceMotion ? Duration.zero : ZeetDuration.notice,
         transitionBuilder: (child, anim) =>
             FadeTransition(opacity: anim, child: child),
         child: Row(

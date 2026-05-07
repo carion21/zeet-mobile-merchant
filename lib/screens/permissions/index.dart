@@ -570,13 +570,13 @@ class _StatusPill extends StatelessWidget {
         label = 'Appuyez pour autoriser';
         icon = Icons.touch_app_rounded;
       case ZeetPermissionStatus.permanentlyDenied:
-        bg = const Color(0xFFFFE6E6);
-        fg = const Color(0xFFD32F2F);
+        bg = ZeetColors.dangerBg;
+        fg = ZeetColors.danger;
         label = 'Ouvrir les reglages';
         icon = Icons.settings_rounded;
       case ZeetPermissionStatus.notApplicable:
-        bg = const Color(0xFFEEEEEE);
-        fg = const Color(0xFF616161);
+        bg = ZeetColors.line;
+        fg = ZeetColors.inkMuted;
         label = 'Non necessaire';
         icon = Icons.remove_circle_outline_rounded;
     }

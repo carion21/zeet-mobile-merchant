@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/ticket_model.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
@@ -71,7 +72,7 @@ class _TicketDetailScreenState extends ConsumerState<TicketDetailScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
+          duration: ZeetDuration.std,
           curve: Curves.easeOut,
         );
       }

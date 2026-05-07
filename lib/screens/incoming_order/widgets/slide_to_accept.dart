@@ -13,6 +13,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:merchant/core/tokens/durations.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 class SlideToAcceptButton extends StatefulWidget {
@@ -57,7 +58,7 @@ class _SlideToAcceptButtonState extends State<SlideToAcceptButton>
     super.initState();
     _resetController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: ZeetDuration.std,
     )..addListener(() {
         setState(() {
           _dragX = _dragX * (1 - _resetController.value);

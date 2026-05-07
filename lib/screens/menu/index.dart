@@ -443,15 +443,29 @@ class _MenuScreenState extends ConsumerState<MenuScreen> {
               builder: (context, scrollController) {
                 if (detailState.status == MenuDetailStatus.loading ||
                     detailState.status == MenuDetailStatus.initial) {
-                  return const Center(child: CircularProgressIndicator());
+                  // Skeleton list > spinner full-screen (skill
+                  // `zeet-motion-system` §9 : skeleton maintient le layout).
+                  return ListView(
+                    controller: scrollController,
+                    padding: EdgeInsets.all(20.w),
+                    children: const <Widget>[
+                      ZeetSkeletonList(itemCount: 4, itemHeight: 64),
+                    ],
+                  );
                 }
 
                 if (detailState.status == MenuDetailStatus.error) {
-                  return Center(
-                    child: Text(
-                      detailState.errorMessage ?? 'Erreur',
-                      style: TextStyle(color: textLightColor),
-                    ),
+                  return ZeetErrorState(
+                    kind: ZeetErrorKind.generic,
+                    title: 'Chargement impossible',
+                    description: detailState.errorMessage ??
+                        'Une erreur est survenue.',
+                    retryLabel: 'Reessayer',
+                    onRetry: () {
+                      ref
+                          .read(menuDetailProvider.notifier)
+                          .load(menuId);
+                    },
                   );
                 }
 
