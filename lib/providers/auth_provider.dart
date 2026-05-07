@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/models/partner_model.dart';
+import 'package:merchant/providers/sync_provider.dart';
 import 'package:merchant/services/auth_service.dart';
 import 'package:merchant/services/api_client.dart';
 
@@ -42,9 +43,11 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
+  final Ref? _ref;
 
-  AuthNotifier({AuthService? authService})
+  AuthNotifier({AuthService? authService, Ref? ref})
       : _authService = authService ?? AuthService(),
+        _ref = ref,
         super(const AuthState());
 
   /// Verifie l'etat d'authentification au demarrage de l'app.
@@ -124,9 +127,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Deconnecte le partner et reinitialise l'etat.
+  ///
+  /// Ordre des operations (important) :
+  ///   1. Purge la DB Drift locale (orders cache + queued actions). Sans
+  ///      ca la queue d'un user A se rejouait avec les tokens du user B
+  ///      apres un changement de compte → 403 et fuite cross-user.
+  ///   2. Demande au backend de revoquer les tokens + clear local tokens.
+  ///   3. Reset le state authProvider.
+  ///
+  /// FCM listeners ne sont PAS disposes ici : ils sont des singletons
+  /// `_initialized` une seule fois dans `_MyAppState.initState`. Le
+  /// re-routage vers le bon compte se fait via
+  /// `DeviceTokenManager.registerCurrentDevice()` au login suivant.
+  ///
+  /// Chaque etape est try/catch independante : on veut absolument que
+  /// le logout aboutisse meme si la purge DB echoue (sinon l'user est
+  /// bloque sur un compte qu'il refuse).
   Future<void> logout() async {
     state = state.copyWith(status: AuthStatus.loading);
 
+    // 1. Purge DB locale — empeche la queue d'agir sur un compte tiers.
+    final ref = _ref;
+    if (ref != null) {
+      try {
+        await ref.read(partnerDatabaseProvider).clearAll();
+      } catch (e) {
+        debugPrint('[AuthProvider] clearAll DB failed: $e');
+      }
+    }
+
+    // 2. Backend logout + clear tokens.
     try {
       await _authService.logout();
     } catch (e) {
@@ -142,5 +172,5 @@ class AuthNotifier extends StateNotifier<AuthState> {
 // ---------------------------------------------------------------------------
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier();
+  return AuthNotifier(ref: ref);
 });

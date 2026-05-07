@@ -44,16 +44,20 @@ class IncomingOrderState {
   /// Dernier message d'erreur utilisateur (affiche inline sur l'ecran).
   final String? errorMessage;
 
-  /// Indique que l'ACK "vu" (POST /notifications/:id/ack) a deja ete envoye
-  /// pour ce payload. Empeche les doubles appels au cas ou l'ecran rebuild
-  /// (rotation, hot-reload, focus change). La valeur est reset par [show].
-  final bool ackSent;
+  /// `notificationId` du payload pour lequel l'ACK "vu" a deja ete envoye.
+  /// Identifier au lieu d'un bool pour eviter le bug de race :
+  /// si un FCM2 arrive pendant que l'ACK du FCM1 est in-flight, le `show`
+  /// remplace le payload mais le bool serait set par l'await sur le mauvais
+  /// payload → FCM2 marque "deja ack" alors qu'il n'a jamais ete acke.
+  ///
+  /// `null` ou != current payload → on doit envoyer l'ACK.
+  final int? ackedNotificationId;
 
   const IncomingOrderState({
     this.phase = IncomingOrderPhase.idle,
     this.payload,
     this.errorMessage,
-    this.ackSent = false,
+    this.ackedNotificationId,
   });
 
   bool get isActive =>
@@ -65,19 +69,28 @@ class IncomingOrderState {
       phase == IncomingOrderPhase.accepting ||
       phase == IncomingOrderPhase.rejecting;
 
+  /// `true` si l'ACK a deja ete envoye pour le payload courant.
+  bool get ackSent =>
+      payload != null &&
+      ackedNotificationId != null &&
+      ackedNotificationId == payload!.notificationId;
+
   IncomingOrderState copyWith({
     IncomingOrderPhase? phase,
     IncomingOrderPayload? payload,
     String? errorMessage,
-    bool? ackSent,
+    int? ackedNotificationId,
     bool clearError = false,
     bool clearPayload = false,
+    bool clearAcked = false,
   }) {
     return IncomingOrderState(
       phase: phase ?? this.phase,
       payload: clearPayload ? null : (payload ?? this.payload),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-      ackSent: ackSent ?? this.ackSent,
+      ackedNotificationId: clearAcked
+          ? null
+          : (ackedNotificationId ?? this.ackedNotificationId),
     );
   }
 }
@@ -138,17 +151,44 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
     if (payload.notificationId <= 0) return;
     if (state.ackSent) return;
 
+    // Capture le notificationId AVANT l'await pour pouvoir verifier apres
+    // que le payload courant n'a pas ete remplace par un FCM concurrent.
+    final int targetNotifId = payload.notificationId;
+
     // Marque immediatement comme envoyee pour eviter doubles appels
     // concurrents (ex: rebuild de l'ecran pendant que la requete est in-flight).
-    state = state.copyWith(ackSent: true);
-    final ok = await _notificationService.acknowledgeSilent(payload.notificationId);
+    state = state.copyWith(ackedNotificationId: targetNotifId);
+
+    final ok =
+        await _notificationService.acknowledgeSilent(targetNotifId);
+
+    // Apres l'await : si entre-temps `show()` a remplace le payload par un
+    // autre (FCM concurrent < 100ms), state.payload.notificationId n'est
+    // plus targetNotifId. Dans ce cas, ne pas confirmer l'ack pour le
+    // nouveau payload — il fera son propre ackOnView au prochain rebuild.
+    final int? currentNotifId = state.payload?.notificationId;
+
     if (!ok) {
-      // Sur echec on reset le flag pour permettre un nouvel essai a la
-      // prochaine occasion (accept/reject re-tentera de toute facon).
-      state = state.copyWith(ackSent: false);
-    } else {
-      debugPrint('[IncomingOrder] view-ack sent for notif ${payload.notificationId}');
+      // Echec : si le payload est toujours le meme, reset le flag pour
+      // permettre un nouvel essai (accept/reject re-tentera de toute facon).
+      if (currentNotifId == targetNotifId) {
+        state = state.copyWith(clearAcked: true);
+      }
+      return;
     }
+
+    if (currentNotifId != targetNotifId) {
+      // Payload a change pendant l'await — on a confirme l'ack pour
+      // targetNotifId mais le state pointe deja vers un nouveau payload.
+      // Reset l'ack pour que le nouveau payload soit acke a son tour.
+      debugPrint(
+        '[IncomingOrder] view-ack succeeded for $targetNotifId but payload '
+        'switched to $currentNotifId — clearing acked flag',
+      );
+      state = state.copyWith(clearAcked: true);
+      return;
+    }
+    debugPrint('[IncomingOrder] view-ack sent for notif $targetNotifId');
   }
 
   // ---------------------------------------------------------------------------

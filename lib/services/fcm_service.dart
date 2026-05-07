@@ -94,15 +94,24 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
   }
 
   // Transitions de commande en background — sans ce relais, aucune notif
-  // n'apparait quand l'app est killed et l'user voit l'etat stale au
-  // retour foreground. Cf. bug "le refresh partner n'est pas toujours
-  // effectif". Canal `zeet_partner_orders` HIGH (son + vibration, pas FSI).
+  // n'apparait quand l'app est killed (data-only) et l'user voit l'etat
+  // stale au retour foreground. Canal `zeet_partner_orders` HIGH
+  // (son + vibration, pas FSI).
+  //
+  // Liste alignee sur FCM_PARTNER_CONTRACT.md §4 + WORK_ORDER §4 :
+  // SEULS les events "visible HIGH/normal" generent une notif locale ici.
+  // Les events "silent" (order.status_changed, order.delivered,
+  // wallet.credited, rating.received) ne doivent JAMAIS reveiller l'user
+  // en background — l'UI se mettra a jour via les dispatchers au prochain
+  // foreground.
+  //
+  // Les alias historiques (`order.cancelled`, `order.updated`) sont gardes
+  // pour absorber d'eventuels vieux backends ou messages en transit. A
+  // retirer une fois la migration 4.x backend confirmee en prod.
   const Set<String> transitionTypes = <String>{
-    'order.updated',
-    'order.cancelled',
-    'order.delivered',
-    'order.rider_assigned',
-    'order.otp.updated',
+    'order.cancelled_by_customer',
+    'order.cancelled_by_admin',
+    'order.cancelled', // alias retrocompat
   };
   if (transitionTypes.contains(type)) {
     final String title = (data['title']?.toString().isNotEmpty ?? false)
@@ -123,17 +132,13 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 /// payload data (fallback rare — en prod le backend pose toujours ce champ).
 String _defaultTransitionTitle(String type) {
   switch (type) {
+    case 'order.cancelled_by_customer':
+      return 'Commande annulée par le client';
+    case 'order.cancelled_by_admin':
+      return 'Commande annulée par ZEET';
     case 'order.cancelled':
-      return 'Commande annulée';
-    case 'order.delivered':
-      return 'Commande livrée';
-    case 'order.rider_assigned':
-      return 'Livreur assigné';
-    case 'order.otp.updated':
-      return 'Code de collecte mis à jour';
-    case 'order.updated':
     default:
-      return 'Mise à jour commande';
+      return 'Commande annulée';
   }
 }
 

@@ -252,8 +252,11 @@ class ApiClient {
     if (response.statusCode == 401 && !_isRefreshing) {
       final refreshed = await _tryRefreshToken();
       if (refreshed) {
-        // Re-executer la requete originale avec le nouveau token
-        return _retryRequest(method, url);
+        // Re-executer la requete originale avec le nouveau token. Le body
+        // est passe pour les verbes POST/PUT/PATCH — sans ca, un 401 sur
+        // une mutation (ex: confirm order) provoquait une fausse erreur
+        // "Session expiree" alors que le refresh avait reussi.
+        return _retryRequest(method, url, requestBody);
       }
     }
 
@@ -334,24 +337,51 @@ class ApiClient {
   }
 
   /// Re-execute une requete apres un refresh de token reussi.
-  Future<Map<String, dynamic>> _retryRequest(String method, String url) async {
+  ///
+  /// [requestBody] est le body JSON-encode original (passe par
+  /// [_handleResponse]). Necessaire pour POST/PUT/PATCH : sans lui,
+  /// le retry partait avec un body vide → 400 ou doublon car le serveur
+  /// avait deja recu la version originale (le 401 vient apres traitement
+  /// dans certains cas) → confirmation perdue cote UI.
+  Future<Map<String, dynamic>> _retryRequest(
+    String method,
+    String url,
+    String? requestBody,
+  ) async {
     final headers = await _buildHeaders(withAuth: true);
     final uri = Uri.parse(url);
 
     http.Response response;
     switch (method) {
       case 'GET':
-        response = await _httpClient.get(uri, headers: headers);
+        response = await _httpClient
+            .get(uri, headers: headers)
+            .timeout(_defaultTimeout);
         break;
       case 'DELETE':
-        response = await _httpClient.delete(uri, headers: headers);
+        response = await _httpClient
+            .delete(uri, headers: headers)
+            .timeout(_defaultTimeout);
+        break;
+      case 'POST':
+        response = await _httpClient
+            .post(uri, headers: headers, body: requestBody)
+            .timeout(_defaultTimeout);
+        break;
+      case 'PUT':
+        response = await _httpClient
+            .put(uri, headers: headers, body: requestBody)
+            .timeout(_defaultTimeout);
+        break;
+      case 'PATCH':
+        response = await _httpClient
+            .patch(uri, headers: headers, body: requestBody)
+            .timeout(_defaultTimeout);
         break;
       default:
-        // Pour POST/PUT on ne peut pas re-executer sans le body original.
-        // Dans la majorite des cas, le 401 survient sur des GET.
-        throw const ApiException(
+        throw ApiException(
           statusCode: 401,
-          message: 'Session expiree, veuillez vous reconnecter',
+          message: 'Methode HTTP non supportee pour le retry: $method',
         );
     }
 
@@ -370,6 +400,7 @@ class ApiClient {
           : body['message'] is List
               ? (body['message'] as List).join(', ')
               : 'Une erreur est survenue',
+      code: body['code'] as String?,
       errors: body['errors'] as Map<String, dynamic>?,
     );
   }

@@ -22,7 +22,12 @@ import 'package:merchant/services/fcm_service.dart';
 import 'package:merchant/services/incoming_order_grouper.dart';
 import 'package:merchant/services/local_notification_service.dart';
 import 'package:merchant/services/navigation_service.dart';
+import 'package:merchant/services/order_status_dispatcher.dart';
 import 'package:merchant/services/overlay_service.dart';
+import 'package:merchant/services/partner_dispatcher.dart';
+import 'package:merchant/services/payout_dispatcher.dart';
+import 'package:merchant/services/rating_dispatcher.dart';
+import 'package:merchant/services/wallet_dispatcher.dart';
 import 'package:merchant/providers/theme_provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:merchant/services/api_client.dart';
@@ -157,64 +162,30 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
           // vers TicketDetailScreen (contract §4.2-4.5).
           DeepLinkHandler.handle(ref, data);
 
-          // Auto-refresh des vues quand une transition de commande arrive —
-          // sans ca l'app restait avec des donnees stale tant que l'user ne
-          // faisait pas un pull-to-refresh manuel. Cible tous les events
-          // order.* (created/updated/cancelled/delivered/otp.updated/…)
-          // et le group orders.group. On logue les erreurs au lieu de les
-          // avaler : sans log on ne peut pas diagnostiquer un refresh qui
-          // echoue (cold-start, session expiree, network flaky).
-          if (type.startsWith('order.') || type == 'new_order' ||
-              type == 'orders.group') {
-            try {
-              ref.read(ordersListProvider.notifier).refresh();
-            } catch (e) {
-              debugPrint('[FCM.refresh] ordersList failed: $e');
-            }
-            try {
-              ref.read(dashboardProvider.notifier).refresh();
-            } catch (e) {
-              debugPrint('[FCM.refresh] dashboard failed: $e');
-            }
-            // Si l'ecran OrderDetailsScreen est ouvert sur la commande qui
-            // vient de transitionner (rider picked_up / delivered / annulation
-            // admin), on recharge le detail sans attendre un pull-to-refresh.
-            // Sinon l'user voit un statut stale tant qu'il reste sur la vue.
-            // Avec orderDetailProvider en .family, chaque commande a son
-            // notifier dedie : pas de race entre deux FCM simultanes.
-            try {
-              final orderIdRaw =
-                  data['order_id'] ?? data['entity_id'] ?? data['id'];
-              final orderId = orderIdRaw is int
-                  ? orderIdRaw
-                  : int.tryParse(orderIdRaw?.toString() ?? '');
-              if (orderId != null) {
-                ref
-                    .read(orderDetailProvider(orderId).notifier)
-                    .load(orderId);
-              } else {
-                debugPrint(
-                  '[FCM.refresh] orderDetail skipped: no order_id in '
-                  'payload (type=$type, keys=${data.keys.toList()})',
-                );
-              }
-            } catch (e) {
-              debugPrint('[FCM.refresh] orderDetail failed: $e');
-            }
-            // Wallet : le solde est credite cote backend quand une commande
-            // est livree. Recharger le balance evite d'afficher un montant
-            // obsolete si l'user ouvre le wallet juste apres.
-            try {
-              ref.read(walletProvider.notifier).loadBalance();
-            } catch (e) {
-              debugPrint('[FCM.refresh] wallet failed: $e');
-            }
+          // Auto-refresh des vues — chaque dispatcher est responsable d'un
+          // domaine, retourne true s'il a consomme le payload. Cascade
+          // d'essais : on s'arrete au premier match (les types backend
+          // sont disjoints). Resout le bug "l'UI ne se rafraichit pas
+          // automatiquement quand le core envoie une transition de statut".
+          // Cf. BACKEND_WORK_ORDER_FCM_PARTNER_LIVE.md §4 et
+          // AUDITS/partner-audit-complet-2026-05-07.md section C.
+          if (OrderStatusDispatcher.handleRaw(ref, data)) {
+            // ok : order.*
+          } else if (WalletDispatcher.handleRaw(ref, data)) {
+            // ok : wallet.credited
+          } else if (PayoutDispatcher.handleRaw(ref, data)) {
+            // ok : payout.*
+          } else if (PartnerDispatcher.handleRaw(ref, data)) {
+            // ok : partner.* / menu_item.*
+          } else if (RatingDispatcher.handleRaw(ref, data)) {
+            // ok : rating.received
           }
 
           // Auto-refresh liste tickets sur support.* (message/mention/status/
           // ticket_opened) : le badge "non-lu" et l'ordre de la liste changent
           // des que le backend pousse une nouvelle activite sur un ticket.
-          // Contract §4.2-4.5.
+          // Contract §4.2-4.5. (Pas de SupportDispatcher dedie pour l'instant
+          // car la logique reste simple : liste + detail si ouvert.)
           if (type.startsWith('support.')) {
             try {
               ref.read(ticketsListProvider.notifier).refresh();
@@ -284,6 +255,13 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Hygiene : libere les 3 StreamSubscriptions FCM
+    // (onMessage / onMessageOpenedApp / onTokenRefresh) a la fermeture
+    // de l'app. Sans pratique l'OS detruit l'isolate de toute facon, mais
+    // ca permet une recuperation propre si un test/test integration
+    // recree l'arbre de widgets.
+    // ignore: unawaited_futures
+    FcmService.instance.dispose();
     super.dispose();
   }
 

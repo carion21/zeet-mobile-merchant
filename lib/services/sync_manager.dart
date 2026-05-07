@@ -17,6 +17,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -82,6 +83,19 @@ class SyncManager {
   bool _syncing = false;
   bool _online = true;
   Timer? _backoffTimer;
+
+  /// Set des `action.id` actuellement en vol — empeche la double execution
+  /// d'une meme action quand `retryAction()` (manuel) et `run()` (auto via
+  /// timer ou connectivity) tombent sur la meme entree pending. Sans ce
+  /// garde, le double appel API peut faire echouer la 2e tentative en 4xx
+  /// ("deja confirmee") alors que la 1ere a reussi → l'UI montre "erreur"
+  /// sur un succes effectif.
+  final Set<String> _inFlight = <String>{};
+
+  /// Source d'aleatoire pour le jitter sur le backoff. Sans jitter, plusieurs
+  /// actions qui timeout ensemble re-tirent leur retry au meme instant ->
+  /// thundering herd quand le backend se remet en ligne.
+  static final Random _jitter = Random();
 
   /// A appeler apres [initialize] pour lancer l'ecoute connectivite +
   /// un premier run opportuniste.
@@ -333,6 +347,8 @@ class SyncManager {
       final List<QueuedAction> pending = await _db.getPendingActions();
       for (final QueuedAction action in pending) {
         if (!_online) break;
+        // Skip si retryAction() est en train d'executer cette meme entree.
+        if (_inFlight.contains(action.id)) continue;
         await _executeQueuedAction(action);
       }
     } finally {
@@ -342,6 +358,8 @@ class SyncManager {
 
   /// Retry manuel (ex: tap "Réessayer" sur l'ecran actions en attente).
   Future<void> retryAction(String id) async {
+    // Skip si la meme action est deja en cours (timer fire concurrent).
+    if (_inFlight.contains(id)) return;
     final QueuedAction? action =
         await (_db.select(_db.queuedActions)..where(($QueuedActionsTable t) => t.id.equals(id)))
             .getSingleOrNull();
@@ -356,6 +374,10 @@ class SyncManager {
   }
 
   Future<void> _executeQueuedAction(QueuedAction action) async {
+    // Garde anti-double-execution. `run()` boucle peut s'entrelacer avec
+    // `retryAction()` si l'utilisateur tape "Réessayer" pendant qu'un
+    // timer de backoff fire. Le set est nettoye en finally.
+    if (!_inFlight.add(action.id)) return;
     try {
       await _db.markActionSyncing(action.id);
       final Map<String, dynamic> payload =
@@ -427,6 +449,8 @@ class SyncManager {
       }
       await _db.markActionRetry(id: action.id, error: e.toString());
       _scheduleRetry(attempts);
+    } finally {
+      _inFlight.remove(action.id);
     }
   }
 
@@ -463,10 +487,18 @@ class SyncManager {
   void _scheduleRetry([int? attempts]) {
     final int a = attempts ?? 1;
     final int seconds = _backoffSeconds(a);
+    // Jitter : +/- 0..1000ms d'aleatoire pour eviter le thundering herd
+    // si plusieurs actions timeout en meme temps (5xx generalisee, perte
+    // reseau partagee). Le delai final est dans [seconds * 1000,
+    // seconds * 1000 + 1000) ms.
+    final int jitterMs = _jitter.nextInt(1000);
     _backoffTimer?.cancel();
-    _backoffTimer = Timer(Duration(seconds: seconds), () {
-      if (_online) run();
-    });
+    _backoffTimer = Timer(
+      Duration(milliseconds: seconds * 1000 + jitterMs),
+      () {
+        if (_online) run();
+      },
+    );
   }
 
   int _backoffSeconds(int attempts) {
