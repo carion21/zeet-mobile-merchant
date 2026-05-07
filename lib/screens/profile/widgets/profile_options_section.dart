@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:merchant/core/constants/icons.dart';
+import 'package:merchant/core/constants/links.dart';
+import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/screens/profile/widgets/profile_overlay_toggle.dart';
 import 'package:merchant/screens/root/index.dart';
 import 'package:merchant/screens/service_closed/index.dart';
 import 'package:merchant/screens/tickets/index.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:merchant/services/overlay_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
 /// Bloc des options du profil : mes commandes, portefeuille,
@@ -63,6 +66,28 @@ class ProfileOptionsSection extends ConsumerWidget {
     ];
 
     final List<Widget> restaurant = <Widget>[
+      _ProfileOptionTile(
+        title: 'Produits',
+        icon: 'shopping_bag_outlined',
+        onTap: () {
+          ZeetHaptics.tap();
+          Routes.navigateTo(Routes.products);
+        },
+        showDivider: true,
+        textColor: textColor,
+        textLightColor: textLightColor,
+      ),
+      _ProfileOptionTile(
+        title: 'Menus',
+        icon: 'restaurant_outlined',
+        onTap: () {
+          ZeetHaptics.tap();
+          Routes.navigateTo(Routes.menu);
+        },
+        showDivider: true,
+        textColor: textColor,
+        textLightColor: textLightColor,
+      ),
       _ProfileOptionTile(
         title: 'Horaires d\'ouverture',
         icon: 'schedule',
@@ -122,6 +147,81 @@ class ProfileOptionsSection extends ConsumerWidget {
           children: restaurant,
         ),
         SizedBox(height: 14.h),
+        // Aide en ligne + pages légales hébergées sur zeet.geasscorp.com.
+        // Ouverture en navigateur externe (App Review Guideline 5.1.1) +
+        // URL "suppression compte" obligatoire Play Console.
+        _SectionLabel(label: 'Aide & légal', color: textLightColor),
+        SizedBox(height: 6.h),
+        _OptionsCard(
+          surfaceColor: surfaceColor,
+          children: <Widget>[
+            _ProfileOptionTile(
+              title: 'Aide & FAQ en ligne',
+              icon: 'help',
+              onTap: () => _openExternal(context, ZeetLinks.support),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Sécurité & confiance',
+              icon: 'shield',
+              onTap: () => _openExternal(context, ZeetLinks.safety),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Politique de confidentialité',
+              icon: 'privacy',
+              onTap: () => _openExternal(context, ZeetLinks.privacy),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Conditions d\'utilisation',
+              icon: 'document',
+              onTap: () => _openExternal(context, ZeetLinks.terms),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Conditions générales de vente',
+              icon: 'document',
+              onTap: () => _openExternal(context, ZeetLinks.salesTerms),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Politique cookies',
+              icon: 'document',
+              onTap: () => _openExternal(context, ZeetLinks.cookies),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Mentions légales',
+              icon: 'info',
+              onTap: () => _openExternal(context, ZeetLinks.legalNotice),
+              showDivider: true,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+            _ProfileOptionTile(
+              title: 'Supprimer mon compte',
+              icon: 'delete_outline',
+              onTap: () => _openExternal(context, ZeetLinks.accountDeletion),
+              showDivider: false,
+              textColor: textColor,
+              textLightColor: textLightColor,
+            ),
+          ],
+        ),
+        SizedBox(height: 14.h),
         // Peak moment — fin de service. CTA distinct pour emphase
         // (neuro-UX §8 peak-end rule).
         _PeakCta(
@@ -135,6 +235,17 @@ class ProfileOptionsSection extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+Future<void> _openExternal(BuildContext context, String url) async {
+  final uri = Uri.parse(url);
+  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!launched && context.mounted) {
+    AppToast.showError(
+      context: context,
+      message: 'Impossible d\'ouvrir le lien.',
     );
   }
 }
