@@ -18,7 +18,6 @@
 // - navigation vers le detail (variants + options groups).
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
@@ -33,6 +32,7 @@ import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/product_provider.dart';
 import 'package:merchant/providers/stats_provider.dart';
 import 'package:merchant/screens/products/detail.dart';
+import 'package:merchant/screens/products/widgets/product_wizard_sheet.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:merchant/services/product_service.dart';
@@ -372,7 +372,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (BuildContext ctx) => _ProductFormSheet(
+      builder: (BuildContext ctx) => ProductWizardSheet(
         categories: categories,
         onSubmit: _createProduct,
       ),
@@ -882,196 +882,3 @@ class _Pill extends StatelessWidget {
 
 enum _ProductAction { edit, duplicate, delete }
 
-// =============================================================================
-// Bottom sheet : formulaire creation
-// =============================================================================
-
-class _ProductFormSheet extends StatefulWidget {
-  const _ProductFormSheet({
-    required this.categories,
-    required this.onSubmit,
-  });
-
-  final List<CategorySelect> categories;
-  final Future<void> Function({
-    required String name,
-    required int price,
-    required int categoryId,
-    String? description,
-  }) onSubmit;
-
-  @override
-  State<_ProductFormSheet> createState() => _ProductFormSheetState();
-}
-
-class _ProductFormSheetState extends State<_ProductFormSheet> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nameCtrl;
-  late final TextEditingController _priceCtrl;
-  late final TextEditingController _descCtrl;
-  int? _categoryId;
-  bool _submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameCtrl = TextEditingController();
-    _priceCtrl = TextEditingController();
-    _descCtrl = TextEditingController();
-    _categoryId = widget.categories.isNotEmpty
-        ? widget.categories.first.id
-        : null;
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _priceCtrl.dispose();
-    _descCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme tt = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20.w,
-        right: 20.w,
-        top: 8.h,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24.h,
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              'Nouveau produit',
-              style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            SizedBox(height: 16.h),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nom *',
-                hintText: 'Ex. Poulet braise, Tiep djeun…',
-                border: OutlineInputBorder(),
-              ),
-              textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Nom requis' : null,
-            ),
-            SizedBox(height: 12.h),
-            TextFormField(
-              controller: _priceCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Prix (FCFA) *',
-                hintText: 'Ex. 3000',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.digitsOnly,
-              ],
-              textInputAction: TextInputAction.next,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Prix requis';
-                final int? parsed = int.tryParse(v.trim());
-                if (parsed == null || parsed <= 0) return 'Prix invalide';
-                return null;
-              },
-            ),
-            SizedBox(height: 12.h),
-            DropdownButtonFormField<int>(
-              initialValue: _categoryId,
-              decoration: const InputDecoration(
-                labelText: 'Categorie *',
-                border: OutlineInputBorder(),
-              ),
-              items: widget.categories
-                  .map((CategorySelect c) => DropdownMenuItem<int>(
-                        value: c.id,
-                        child: Text(c.label),
-                      ))
-                  .toList(),
-              onChanged: (int? v) => setState(() => _categoryId = v),
-              validator: (v) => v == null ? 'Categorie requise' : null,
-            ),
-            SizedBox(height: 12.h),
-            TextFormField(
-              controller: _descCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Description (optionnel)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-              textInputAction: TextInputAction.done,
-            ),
-            SizedBox(height: 20.h),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _submitting
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14.h),
-                    ),
-                    child: const Text('Annuler'),
-                  ),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _submitting ? null : _submit,
-                    style: FilledButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14.h),
-                    ),
-                    child: _submitting
-                        ? SizedBox(
-                            width: 20.r,
-                            height: 20.r,
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Creer',
-                            style:
-                                TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_categoryId == null) return;
-    setState(() => _submitting = true);
-    try {
-      await widget.onSubmit(
-        name: _nameCtrl.text.trim(),
-        price: int.parse(_priceCtrl.text.trim()),
-        categoryId: _categoryId!,
-        description: _descCtrl.text.trim().isEmpty
-            ? null
-            : _descCtrl.text.trim(),
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-}

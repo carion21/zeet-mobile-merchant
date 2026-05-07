@@ -19,6 +19,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/screens/permissions/widgets/permission_rationale_sheet.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:merchant/services/permissions_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
@@ -89,9 +90,26 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
 
   Future<void> _requestOne(ZeetPermission p) async {
     await ZeetHaptics.tap();
+    final ZeetPermissionStatus current =
+        _statuses[p] ?? ZeetPermissionStatus.unknown;
+    final bool isCritical = PermissionsService.instance.criticalPermissions
+        .contains(p);
+
+    // Just-in-time rationale (skill `zeet-notification-strategy` §8) :
+    // un sheet intermediaire explique pourquoi avant d'appeler le prompt OS.
+    // Sur permanentlyDenied, le sheet bascule en mode "ouvrir reglages"
+    // avec breadcrumb manuel.
+    if (!mounted) return;
+    final bool confirmed = await showPermissionRationaleSheet(
+      context,
+      permission: p,
+      status: current,
+      critical: isCritical,
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() => _requestingAny = true);
     try {
-      final current = _statuses[p];
       if (current == ZeetPermissionStatus.permanentlyDenied) {
         await PermissionsService.instance.openSettings();
       } else {
