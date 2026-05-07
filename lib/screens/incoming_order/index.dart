@@ -30,12 +30,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:merchant/core/utils/schedule_check.dart';
 import 'package:merchant/core/widgets/cancel_reason_sheet.dart';
 import 'package:merchant/core/widgets/toastification.dart';
 import 'package:merchant/models/incoming_order_payload.dart';
 import 'package:merchant/models/order_model.dart';
 import 'package:merchant/providers/incoming_order_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
+import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/screens/incoming_order/widgets/slide_to_accept.dart';
 import 'package:merchant/services/incoming_ring_bridge.dart';
 import 'package:merchant/services/navigation_service.dart';
@@ -78,6 +80,12 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
   /// a l'apparition du payload (pas a chaque rebuild sinon on re-anime
   /// depuis 0 en boucle et le chiffre clignote).
   int? _rollingAnimatedForOrderId;
+
+  /// ETA prep choisie par le partner (chips 10/15/20/30/45 min). Default
+  /// 20 min — middle ground POS, modifiable d'1 tap avant slide-to-accept.
+  /// Skill `zeet-pos-ergonomics` §1 (hit target ≥ 56pt) + §6 (glanceability).
+  int _selectedEtaMinutes = 20;
+  static const List<int> _etaPresets = <int>[10, 15, 20, 30, 45];
 
   @override
   void initState() {
@@ -305,6 +313,8 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
                         SizedBox(height: 16.h),
                         _buildSummaryCard(payload, detailState),
                         SizedBox(height: 12.h),
+                        _buildTrajetPreview(detailState),
+                        SizedBox(height: 12.h),
                         _buildDetailSection(detailState),
                       ],
                     ),
@@ -424,6 +434,8 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
                     ),
                   ),
                 ),
+                SizedBox(height: 6.h),
+                _OutOfHoursBadge(),
                 SizedBox(height: 8.h),
                 Text(
                   payload.orderCode.isNotEmpty
@@ -751,6 +763,103 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
   // Pas d'encombrement de l'ecran sous stress — on affiche uniquement ce
   // qui accelere la decision (qui commande, quoi, ou).
 
+  /// Aperçu trajet (pickup → dropoff) — adresses + distance estimée si
+  /// disponible. Sans dépendance map (flutter_map non bundle dans merchant)
+  /// : pictogramme + texte. Les coords sont present dans `OrderPosition`.
+  /// Si `position` null, on retourne un SizedBox.shrink (pas de bruit).
+  Widget _buildTrajetPreview(OrderDetailState state) {
+    final pos = state.order?.position;
+    if (pos == null) return const SizedBox.shrink();
+    final pickup = pos.pickupAddress?.trim();
+    final dropoff = pos.dropoffAddress?.trim();
+    if ((pickup == null || pickup.isEmpty) &&
+        (dropoff == null || dropoff.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    final distanceLabel = pos.distanceKm != null
+        ? '${pos.distanceKm!.toStringAsFixed(1)} km'
+        : null;
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(ZeetRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.alt_route_rounded, color: _bgDark, size: 16.sp),
+              SizedBox(width: 6.w),
+              Text(
+                'Trajet',
+                style: TextStyle(
+                  color: _bgDark,
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              if (distanceLabel != null) ...<Widget>[
+                const Spacer(),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 8.w,
+                    vertical: 2.h,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _bgDark.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    distanceLabel,
+                    style: TextStyle(
+                      color: _bgDark,
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          SizedBox(height: 10.h),
+          if (pickup != null && pickup.isNotEmpty)
+            _RouteRow(
+              icon: Icons.store_rounded,
+              color: _bgDark,
+              label: 'Restaurant',
+              text: pickup,
+            ),
+          if (pickup != null && pickup.isNotEmpty &&
+              dropoff != null && dropoff.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 4.h),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(width: 8.w),
+                  Container(
+                    width: 2,
+                    height: 14.h,
+                    color: _bgDark.withValues(alpha: 0.4),
+                  ),
+                ],
+              ),
+            ),
+          if (dropoff != null && dropoff.isNotEmpty)
+            _RouteRow(
+              icon: Icons.location_on_rounded,
+              color: _bgDark,
+              label: 'Client',
+              text: dropoff,
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDetailSection(OrderDetailState state) {
     if (state.status == OrderDetailStatus.loading && state.order == null) {
       return _buildDetailSkeleton();
@@ -966,12 +1075,28 @@ class _IncomingOrderScreenState extends ConsumerState<IncomingOrderScreen>
 
     return Column(
       children: <Widget>[
+        // Chips ETA prep (10/15/20/30/45 min) — choix tactile rapide avant
+        // slide-to-accept. Default 20 min. Hit target chip 48pt+ (gants OK).
+        _EtaChipsRow(
+          values: _etaPresets,
+          selected: _selectedEtaMinutes,
+          enabled: !busy && state.phase == IncomingOrderPhase.ringing,
+          onSelect: (m) {
+            ZeetHaptics.tap();
+            setState(() => _selectedEtaMinutes = m);
+          },
+        ),
+        SizedBox(height: 12.h),
         SlideToAcceptButton(
           key: ValueKey<int>(state.payload?.orderId ?? 0),
-          label: busy ? 'CONFIRMATION...' : 'GLISSER POUR ACCEPTER',
+          label: busy
+              ? 'CONFIRMATION...'
+              : 'GLISSER POUR ACCEPTER · $_selectedEtaMinutes min',
           enabled: !busy && state.phase == IncomingOrderPhase.ringing,
           onCompleted: () {
-            ref.read(incomingOrderProvider.notifier).accept();
+            ref
+                .read(incomingOrderProvider.notifier)
+                .accept(estimatedMinutes: _selectedEtaMinutes);
           },
         ),
         SizedBox(height: 12.h),
@@ -1097,6 +1222,209 @@ class _RejectGhostButtonState extends State<_RejectGhostButton> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Rangee de chips ETA prep (10/15/20/30/45 min) avant slide-to-accept.
+///
+/// Skill `zeet-pos-ergonomics` §1 (hit target ≥ 48pt) + §6 (glanceability) :
+/// chip selectionne = fond plein blanc / texte orange ZEET, non selectionne
+/// = bord blanc semi-transparent / texte blanc. Tap chip → ZeetHaptics.tap().
+class _EtaChipsRow extends StatelessWidget {
+  const _EtaChipsRow({
+    required this.values,
+    required this.selected,
+    required this.enabled,
+    required this.onSelect,
+  });
+
+  final List<int> values;
+  final int selected;
+  final bool enabled;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.only(right: 8.w),
+          child: Text(
+            'Prêt dans :',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 13.sp,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                for (final m in values) ...<Widget>[
+                  _EtaChip(
+                    minutes: m,
+                    isSelected: m == selected,
+                    enabled: enabled,
+                    onTap: () => onSelect(m),
+                  ),
+                  SizedBox(width: 6.w),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EtaChip extends StatelessWidget {
+  const _EtaChip({
+    required this.minutes,
+    required this.isSelected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final int minutes;
+  final bool isSelected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg =
+        isSelected ? Colors.white : Colors.white.withValues(alpha: 0.12);
+    final Color fg =
+        isSelected ? const Color(0xFFFF5A1F) : Colors.white;
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: enabled ? onTap : null,
+          child: Container(
+            constraints: BoxConstraints(minHeight: 48.h, minWidth: 56.w),
+            padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: isSelected
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.4),
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '$minutes min',
+              style: TextStyle(
+                color: fg,
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Ligne d'adresse avec icone + label + texte tronque (max 2 lignes).
+/// Utilise dans `_buildTrajetPreview` pour pickup/dropoff.
+class _RouteRow extends StatelessWidget {
+  const _RouteRow({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(icon, color: color, size: 16.sp),
+        SizedBox(width: 8.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(
+                  color: color.withValues(alpha: 0.7),
+                  fontSize: 10.sp,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13.sp,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Badge "Hors horaires" — affiche si l'heure courante n'est pas dans un
+/// creneau ouvert declare dans `partner.schedules`. Skill plan §7-D :
+/// le backend ignore actuellement les quiet hours, on signale au partner
+/// pour qu'il decide en connaissance de cause.
+class _OutOfHoursBadge extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileProvider).profile;
+    final inSchedule = isWithinSchedule(profile?.schedules);
+    if (inSchedule) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.access_time_rounded,
+              color: Colors.white, size: 12),
+          const SizedBox(width: 4),
+          const Text(
+            'Hors horaires',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }

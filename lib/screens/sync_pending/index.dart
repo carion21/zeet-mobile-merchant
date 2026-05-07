@@ -222,6 +222,10 @@ class _ActionTile extends ConsumerWidget {
         return Icons.close_rounded;
       case QueuedActionType.signalRupture:
         return Icons.block_rounded;
+      case QueuedActionType.requestPayout:
+        return Icons.payments_rounded;
+      case QueuedActionType.validatePayout:
+        return Icons.verified_rounded;
     }
   }
 
@@ -237,6 +241,10 @@ class _ActionTile extends ConsumerWidget {
         return Copy.orderCancel;
       case QueuedActionType.signalRupture:
         return 'Signaler une rupture';
+      case QueuedActionType.requestPayout:
+        return 'Demander un virement';
+      case QueuedActionType.validatePayout:
+        return 'Valider le virement';
     }
   }
 }

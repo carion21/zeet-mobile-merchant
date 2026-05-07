@@ -90,6 +90,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: <Widget>[
             SliverToBoxAdapter(child: _BalanceHero(state: state)),
+            SliverToBoxAdapter(child: _WeekSummaryCard(entries: state.entries)),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -127,13 +128,58 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
 // HERO SOLDE
 // =============================================================================
 
-class _BalanceHero extends StatelessWidget {
+class _BalanceHero extends StatefulWidget {
   const _BalanceHero({required this.state});
 
   final WalletState state;
 
   @override
+  State<_BalanceHero> createState() => _BalanceHeroState();
+}
+
+class _BalanceHeroState extends State<_BalanceHero>
+    with SingleTickerProviderStateMixin {
+  /// Solde precedent — sert a detecter les credits (delta > 0) pour
+  /// declencher le pulse vert. Initialise apres le 1er build pour ne pas
+  /// flasher au mount.
+  double? _prevBalance;
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _pulse = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_BalanceHero old) {
+    super.didUpdateWidget(old);
+    final next = widget.state.wallet?.balance ?? 0;
+    final prev = _prevBalance;
+    if (prev != null && next > prev) {
+      // Credit detecte (livraison terminee, transfert recu, etc.) → pulse
+      // vert + haptic doux. Skill `zeet-neuro-ux` §12bis (dopamine).
+      ZeetHaptics.success();
+      _pulseCtrl.forward(from: 0);
+    }
+    _prevBalance = next;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _prevBalance ??= widget.state.wallet?.balance ?? 0;
+    final state = widget.state;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
     final bool isLoading = state.balanceStatus == WalletStatus.loading &&
@@ -148,13 +194,31 @@ class _BalanceHero extends StatelessWidget {
         ZeetSpacing.x4,
         ZeetSpacing.x2,
       ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(ZeetSpacing.x5),
-        decoration: BoxDecoration(
-          color: scheme.primary,
-          borderRadius: ZeetRadius.brLg,
-        ),
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          // Glow vert sur la card pendant le pulse — fade in 200ms, fade
+          // out 500ms (asymetrique = sensation "il s'est passe quelque
+          // chose").
+          final pct = _pulse.value;
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(ZeetSpacing.x5),
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              borderRadius: ZeetRadius.brLg,
+              boxShadow: <BoxShadow>[
+                if (pct > 0)
+                  BoxShadow(
+                    color: ZeetColors.success.withValues(alpha: 0.4 * pct),
+                    blurRadius: 16 * pct,
+                    spreadRadius: 2 * pct,
+                  ),
+              ],
+            ),
+            child: child,
+          );
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -508,5 +572,98 @@ class _WalletEntryTile extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+// =============================================================================
+// SECTION "Cette semaine" — storytelling FR sur les credits 7 derniers jours
+// (skill `zeet-neuro-ux` §13 + plan §3 polish couche).
+// Source : entries deja paginees + filtrees sur direction=credit cote serveur.
+// Si aucun credit recent → card cachee (zero pixel).
+// =============================================================================
+
+class _WeekSummaryCard extends StatelessWidget {
+  const _WeekSummaryCard({required this.entries});
+
+  final List<WalletEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    final now = DateTime.now();
+    final cutoff = now.subtract(const Duration(days: 7));
+    double total = 0;
+    int count = 0;
+    for (final e in entries) {
+      if (!e.isCredit) continue;
+      final raw = e.createdAt;
+      if (raw == null || raw.isEmpty) continue;
+      final dt = DateTime.tryParse(raw);
+      if (dt == null) continue;
+      if (dt.isBefore(cutoff)) continue;
+      total += e.amount;
+      count++;
+    }
+    if (count == 0 || total <= 0) return const SizedBox.shrink();
+
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final fcfa = _formatFcfa(total);
+    final phrase = count == 1
+        ? 'Cette semaine : 1 credit recu — $fcfa.'
+        : 'Cette semaine : $count credits cumules — $fcfa.';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        ZeetSpacing.x4,
+        ZeetSpacing.x3,
+        ZeetSpacing.x4,
+        0,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: ZeetSpacing.x4,
+          vertical: ZeetSpacing.x3,
+        ),
+        decoration: BoxDecoration(
+          color: ZeetColors.success.withValues(alpha: 0.08),
+          borderRadius: const BorderRadius.all(Radius.circular(ZeetRadius.md)),
+          border: Border.all(
+            color: ZeetColors.success.withValues(alpha: 0.25),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.trending_up_rounded,
+              color: ZeetColors.success,
+              size: 18,
+            ),
+            const SizedBox(width: ZeetSpacing.x2),
+            Expanded(
+              child: Text(
+                phrase,
+                style: tt.bodyMedium?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatFcfa(double amount) {
+    final s = amount.toStringAsFixed(0);
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} FCFA';
   }
 }

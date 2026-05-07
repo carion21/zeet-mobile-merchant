@@ -12,6 +12,7 @@ import 'package:merchant/screens/profile/widgets/profile_error_fallback.dart';
 import 'package:merchant/screens/profile/widgets/profile_header.dart';
 import 'package:merchant/screens/profile/widgets/profile_options_section.dart';
 import 'package:merchant/screens/profile/widgets/profile_stats_card.dart';
+import 'package:merchant/screens/profile/widgets/rating_breakdown_card.dart';
 import 'package:merchant/services/navigation_service.dart';
 import 'package:zeet_ui/zeet_ui.dart';
 
@@ -141,6 +142,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     textLightColor: textLightColor,
                     surfaceColor: surfaceColor,
                     isDark: isDark,
+                  ),
+                  SizedBox(height: 12.h),
+                  RatingBreakdownCard(
+                    textColor: textColor,
+                    textLightColor: textLightColor,
+                    surfaceColor: surfaceColor,
                   ),
                   SizedBox(height: 16.h),
                   ProfileOptionsSection(

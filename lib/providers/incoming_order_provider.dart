@@ -199,7 +199,7 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
   ///
   /// Retourne `true` si l'acceptation a reussi cote API (screen peut se
   /// fermer), `false` sinon (screen reste pour permettre un retry).
-  Future<bool> accept() async {
+  Future<bool> accept({int? estimatedMinutes}) async {
     final payload = state.payload;
     if (payload == null || state.isBusy) return false;
 
@@ -211,7 +211,7 @@ class IncomingOrderNotifier extends StateNotifier<IncomingOrderState> {
     try {
       await _orderService.confirmOrder(
         payload.orderId,
-        estimatedMinutes: kDefaultPrepMinutes,
+        estimatedMinutes: estimatedMinutes ?? kDefaultPrepMinutes,
       );
 
       // Ack la notification pour couper la cascade cote backend (si pas

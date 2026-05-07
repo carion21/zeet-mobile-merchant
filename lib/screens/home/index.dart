@@ -10,14 +10,15 @@ import 'package:merchant/models/business_day_window.dart';
 import 'package:merchant/providers/auth_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
+import 'package:merchant/providers/cart_partner_provider.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
 import 'package:merchant/screens/home/widgets/home_close_service_cta.dart';
 import 'package:merchant/screens/home/widgets/home_compact_stats.dart';
+import 'package:merchant/screens/home/widgets/home_insight_banner.dart';
 import 'package:merchant/screens/home/widgets/home_earnings_card.dart';
 import 'package:merchant/screens/home/widgets/home_header.dart';
 import 'package:merchant/screens/home/widgets/home_orders_section.dart';
-import 'package:merchant/screens/home/widgets/home_quick_actions.dart';
 import 'package:merchant/services/fcm_service.dart';
 import 'package:merchant/services/navigation_service.dart';
 
@@ -59,6 +60,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ref.read(dashboardProvider.notifier).loadSummary();
       ref.read(profileProvider.notifier).loadProfile();
       ref.read(ordersListProvider.notifier).load();
+      // Cart stats — exploite GET /v1/partner/carts/stats (montant total,
+      // valeur moyenne) au-dela du compteur "actifs" deja remonte par
+      // /dashboard/summary. Permet d'afficher des insights de conversion
+      // dans les widgets `cartStatsProvider`.
+      ref.read(cartStatsProvider.notifier).load();
     });
 
     _businessDayTicker = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -159,15 +165,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ),
                     ),
                     SliverToBoxAdapter(child: SizedBox(height: 12.h)),
-                    // Shortcuts catalogue / horaires — 1 tap depuis home
-                    // (skill zeet-3-clicks-rule §5 : catalogue acces ≤ 2 taps).
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16.w),
-                        child: const HomeQuickActions(),
-                      ),
-                    ),
-                    SliverToBoxAdapter(child: SizedBox(height: 20.h)),
+                    const SliverToBoxAdapter(child: HomeInsightBanner()),
+                    SliverToBoxAdapter(child: SizedBox(height: 12.h)),
                     HomeOrdersSection(
                       tabController: _tabController,
                       isOnline: isOnline,

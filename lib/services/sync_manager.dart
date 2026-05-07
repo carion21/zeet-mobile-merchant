@@ -24,9 +24,11 @@ import 'package:flutter/foundation.dart';
 import 'package:merchant/data/local/order_cache_serializer.dart';
 import 'package:merchant/data/local/partner_database.dart';
 import 'package:merchant/models/order_model.dart';
+import 'package:merchant/models/payout_model.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/local_notification_service.dart';
 import 'package:merchant/services/order_service.dart';
+import 'package:merchant/services/payout_service.dart';
 import 'package:uuid/uuid.dart';
 
 /// Résultat d'une action optimistic exposé à l'UI.
@@ -52,8 +54,10 @@ class SyncManager {
   SyncManager._({
     required PartnerDatabase database,
     OrderService? orderService,
+    PayoutService? payoutService,
   })  : _db = database,
-        _orderService = orderService ?? OrderService();
+        _orderService = orderService ?? OrderService(),
+        _payoutService = payoutService ?? PayoutService();
 
   static SyncManager? _instance;
   static const Uuid _uuid = Uuid();
@@ -62,8 +66,13 @@ class SyncManager {
   static SyncManager initialize({
     required PartnerDatabase database,
     OrderService? orderService,
+    PayoutService? payoutService,
   }) {
-    _instance ??= SyncManager._(database: database, orderService: orderService);
+    _instance ??= SyncManager._(
+      database: database,
+      orderService: orderService,
+      payoutService: payoutService,
+    );
     return _instance!;
   }
 
@@ -84,6 +93,7 @@ class SyncManager {
 
   final PartnerDatabase _db;
   final OrderService _orderService;
+  final PayoutService _payoutService;
   final Connectivity _connectivity = Connectivity();
 
   StreamSubscription<List<ConnectivityResult>>? _connSub;
@@ -446,6 +456,14 @@ class SyncManager {
             error: 'signalRupture non implemente (placeholder)',
           );
           return;
+        case QueuedActionType.requestPayout:
+        case QueuedActionType.validatePayout:
+          // Payouts financiers — pas d'`Order` a ecrire en cache (il n'y a
+          // pas de commande referencee). On execute l'API et on marque
+          // l'action OK/KO. La UI lit `walletProvider` qui se rafraichit
+          // au prochain tick (ou via FCM `payout.validated/rejected`).
+          await _executePayoutAction(action, payload);
+          return;
       }
 
       await _db.upsertOrder(
@@ -510,6 +528,156 @@ class SyncManager {
         return 'Annuler la commande';
       case QueuedActionType.signalRupture:
         return 'Signaler une rupture';
+      case QueuedActionType.requestPayout:
+        return 'Demander un virement';
+      case QueuedActionType.validatePayout:
+        return 'Valider le virement';
+    }
+  }
+
+  /// Execute une action payout (request OU validate). Lit l'uuid + amount
+  /// depuis le payload JSON. Failure 4xx (sauf 408/429) = markFailed
+  /// definitif (le serveur a explicitement rejete — re-try ne marche pas
+  /// sur ces codes). Sinon retry exponentiel via SyncManager core loop.
+  Future<void> _executePayoutAction(
+    QueuedAction action,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      if (action.type == QueuedActionType.requestPayout) {
+        final amount = (payload['amount'] as num?)?.toDouble() ?? 0;
+        final note = payload['note'] as String?;
+        await _payoutService.create(
+          CreatePayoutRequest(amount: amount, note: note),
+        );
+      } else {
+        // validatePayout
+        final uuid = payload['uuid'] as String? ?? '';
+        final code = payload['code'] as String?;
+        if (uuid.isEmpty) {
+          await _notifyActionFailed(
+              action, 'uuid payout manquant (payload corrompu)');
+          await _db.markActionFailed(
+            id: action.id,
+            error: 'uuid payout manquant',
+          );
+          return;
+        }
+        await _payoutService.validate(uuid, code: code);
+      }
+      await _db.markActionSuccess(action.id);
+    } on ApiException catch (e) {
+      if (e.statusCode >= 400 &&
+          e.statusCode < 500 &&
+          e.statusCode != 408 &&
+          e.statusCode != 429) {
+        await _notifyActionFailed(action, e.message);
+        await _db.markActionFailed(id: action.id, error: e.message);
+        return;
+      }
+      final attempts = action.attempts + 1;
+      if (attempts >= 10) {
+        await _notifyActionFailed(action, e.message);
+        await _db.markActionFailed(id: action.id, error: e.message);
+        return;
+      }
+      await _db.markActionRetry(id: action.id, error: e.message);
+      _scheduleRetry(attempts);
+    } catch (e) {
+      final attempts = action.attempts + 1;
+      if (attempts >= 10) {
+        await _notifyActionFailed(action, e.toString());
+        await _db.markActionFailed(id: action.id, error: e.toString());
+        return;
+      }
+      await _db.markActionRetry(id: action.id, error: e.toString());
+      _scheduleRetry(attempts);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Optimistic writes — payouts
+  // -------------------------------------------------------------
+
+  /// Enqueue une demande de virement. Tente immediatement si online,
+  /// sinon rejoue au retour reseau. Retourne true si l'API a confirme
+  /// (succes immediat), false si l'action est en file.
+  Future<bool> optimisticRequestPayout({
+    required double amount,
+    String? note,
+  }) async {
+    final actionId = _uuid.v4();
+    await _db.enqueueAction(
+      id: actionId,
+      type: QueuedActionType.requestPayout,
+      orderId: 0,
+      payload: jsonEncode(<String, dynamic>{
+        'amount': amount,
+        if (note != null) 'note': note,
+      }),
+    );
+    if (!_online) return false;
+    try {
+      await _db.markActionSyncing(actionId);
+      await _payoutService.create(
+        CreatePayoutRequest(amount: amount, note: note),
+      );
+      await _db.markActionSuccess(actionId);
+      return true;
+    } on ApiException catch (e) {
+      if (e.statusCode >= 400 &&
+          e.statusCode < 500 &&
+          e.statusCode != 408 &&
+          e.statusCode != 429) {
+        await _db.markActionFailed(id: actionId, error: e.message);
+        return false;
+      }
+      await _db.markActionRetry(id: actionId, error: e.message);
+      _scheduleRetry();
+      return false;
+    } catch (e) {
+      await _db.markActionRetry(id: actionId, error: e.toString());
+      _scheduleRetry();
+      return false;
+    }
+  }
+
+  /// Enqueue une validation de virement (par uuid).
+  Future<bool> optimisticValidatePayout({
+    required String uuid,
+    String? code,
+  }) async {
+    final actionId = _uuid.v4();
+    await _db.enqueueAction(
+      id: actionId,
+      type: QueuedActionType.validatePayout,
+      orderId: 0,
+      payload: jsonEncode(<String, dynamic>{
+        'uuid': uuid,
+        if (code != null) 'code': code,
+      }),
+    );
+    if (!_online) return false;
+    try {
+      await _db.markActionSyncing(actionId);
+      await _payoutService.validate(uuid, code: code);
+      await _db.markActionSuccess(actionId);
+      return true;
+    } on ApiException catch (e) {
+      if (e.statusCode >= 400 &&
+          e.statusCode < 500 &&
+          e.statusCode != 408 &&
+          e.statusCode != 429) {
+        await _db.markActionFailed(id: actionId, error: e.message);
+        return false;
+      }
+      await _db.markActionRetry(id: actionId, error: e.message);
+      _scheduleRetry();
+      return false;
+    } catch (e) {
+      await _db.markActionRetry(id: actionId, error: e.toString());
+      _scheduleRetry();
+      return false;
     }
   }
 

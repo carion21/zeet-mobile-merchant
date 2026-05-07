@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:merchant/screens/splash/index.dart';
 import 'package:merchant/screens/auth/login/index.dart';
+import 'package:merchant/screens/carts/index.dart';
 import 'package:merchant/screens/order_details/index.dart';
 import 'package:merchant/screens/menu/index.dart';
+import 'package:merchant/screens/notifications/preferences.dart';
 import 'package:merchant/screens/opening_hours/index.dart';
 import 'package:merchant/screens/payouts/index.dart';
 import 'package:merchant/screens/permissions/index.dart';
@@ -38,6 +40,8 @@ class Routes {
   static const String products = '/products';
   static const String payouts = '/payouts';
   static const String openingHours = '/opening-hours';
+  static const String notificationPreferences = '/notifications/preferences';
+  static const String carts = '/carts';
 
   // Définition des constructeurs de widgets pour chaque route.
   // Les routes `home`, `orders`, `profile` pointent TOUTES sur
@@ -57,6 +61,9 @@ class Routes {
     products: (context) => const ProductsScreen(),
     payouts: (context) => const PayoutsScreen(),
     openingHours: (context) => const OpeningHoursScreen(),
+    notificationPreferences: (context) =>
+        const NotificationPreferencesScreen(),
+    carts: (context) => const CartsListScreen(),
   };
 
   // ─── Helpers ZeetPageRoute ────────────────────────────────────────

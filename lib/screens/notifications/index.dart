@@ -161,6 +161,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ),
               ),
             ),
+          // Acces rapide aux preferences canaux (push/sms/in-app/email).
+          IconButton(
+            tooltip: 'Preferences',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () {
+              ZeetHaptics.tap();
+              Routes.navigateTo(Routes.notificationPreferences);
+            },
+          ),
         ],
       ),
       body: RefreshIndicator(

@@ -61,28 +61,28 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
   // Seuls les events "new order" meritent un full-screen intent avec
   // sonnerie alarme — ils requierent une decision immediate.
   if (type == 'order.created' || type == 'new_order') {
-    final title = (data['title']?.toString().isNotEmpty ?? false)
-        ? data['title'].toString()
-        : 'Nouvelle commande';
-    final body = (data['body']?.toString().isNotEmpty ?? false)
-        ? data['body'].toString()
-        : 'Appuyez pour voir les details';
-
     // Grouping Phase 4 : si > 3 notifs en < 2 min, le grouper active la
     // summary. Quel que soit le retour, on pousse la notif individuelle
     // avec groupKey/threadIdentifier (cf. LocalNotifService) pour que
     // le systeme les stacke visuellement. Parse defensif : si le payload
     // est minimaliste, le grouper compte quand meme la nouvelle entree.
     bool grouped = false;
+    IncomingOrderPayload? parsed;
     try {
-      final IncomingOrderPayload? parsed =
-          IncomingOrderPayload.tryParse(data);
+      parsed = IncomingOrderPayload.tryParse(data);
       if (parsed != null) {
         grouped = await IncomingOrderGrouper.instance.onIncomingOrder(parsed);
       }
     } catch (e) {
       debugPrint('[FcmService.bg] grouper failed: $e');
     }
+
+    // Format dense lock-screen (Skill `zeet-notification-strategy` §3) :
+    // `Cmde · 12 500 FCFA · 3 articles · ZT-...`. Permet au partner de
+    // decider en 1 glance. Backend fournit `title`/`body` mais le parser
+    // local enrichit avec total/items quand dispo.
+    final title = _buildIncomingOrderTitle(data, parsed);
+    final body = _buildIncomingOrderBody(data, parsed);
 
     await LocalNotificationService.showIncomingOrder(
       title: title,
@@ -127,6 +127,65 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
     );
   }
 }
+
+/// Construit un titre de notif "nouvelle commande" dense et glanceable.
+///
+/// Format prefere : `Cmde · 12 500 FCFA · 3 articles`. Si le payload n'a
+/// pas le total ou le nombre d'items, on retombe sur le titre backend, puis
+/// sur le libelle generique "Nouvelle commande".
+///
+/// Skill `zeet-notification-strategy` §3 (info dense lock-screen) +
+/// `zeet-tone-of-voice-fr` (vouvoiement, abreviations sobres).
+String _buildIncomingOrderTitle(
+  Map<String, dynamic> data,
+  IncomingOrderPayload? parsed,
+) {
+  final int total = parsed?.totalFcfa ?? 0;
+  final int items = parsed?.itemsCount ?? 0;
+
+  if (total > 0 && items > 0) {
+    return 'Cmde · ${_formatFcfa(total)} · ${_pluralizeItems(items)}';
+  }
+  if (total > 0) {
+    return 'Cmde · ${_formatFcfa(total)}';
+  }
+  if (items > 0) {
+    return 'Cmde · ${_pluralizeItems(items)}';
+  }
+  final raw = data['title']?.toString();
+  if (raw != null && raw.isNotEmpty) return raw;
+  return 'Nouvelle commande';
+}
+
+/// Construit le body de la notif. Affiche le code de commande si dispo,
+/// sinon retombe sur le body backend ou un libelle generique.
+String _buildIncomingOrderBody(
+  Map<String, dynamic> data,
+  IncomingOrderPayload? parsed,
+) {
+  final code = parsed?.orderCode;
+  if (code != null && code.isNotEmpty) {
+    return 'Code : $code · Appuyez pour decider.';
+  }
+  final raw = data['body']?.toString();
+  if (raw != null && raw.isNotEmpty) return raw;
+  return 'Appuyez pour voir les details.';
+}
+
+/// Format FCFA avec espaces tous les 3 chiffres (convention BCEAO/Zeet).
+/// Ex: 12500 → "12 500 FCFA".
+String _formatFcfa(int amount) {
+  final s = amount.toString();
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    final fromEnd = s.length - i;
+    if (i > 0 && fromEnd % 3 == 0) buf.write(' ');
+    buf.write(s[i]);
+  }
+  return '${buf.toString()} FCFA';
+}
+
+String _pluralizeItems(int n) => n <= 1 ? '$n article' : '$n articles';
 
 /// Libelle par defaut quand le backend n'envoie pas de `title` dans le
 /// payload data (fallback rare — en prod le backend pose toujours ce champ).

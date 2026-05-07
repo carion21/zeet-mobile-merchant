@@ -15,10 +15,19 @@ class PayoutService {
   // POST /v1/partner/payouts
   // ---------------------------------------------------------------------------
   /// Cree une nouvelle demande de virement.
+  ///
+  /// `Idempotency-Key` cle logique : `payout:create:{amount}:{ts-quart-heure}`.
+  /// Le quart-d'heure est inclus pour qu'un retry rapide reutilise la meme
+  /// cle (evite doublon serveur), mais qu'une vraie deuxieme demande de
+  /// montant identique 30min plus tard genere une nouvelle cle.
   Future<Payout> create(CreatePayoutRequest request) async {
+    final amount = request.amount;
+    final bucket = (DateTime.now().millisecondsSinceEpoch / (15 * 60 * 1000))
+        .floor();
     final response = await _apiClient.post(
       PayoutEndpoints.create,
       body: request.toJson(),
+      idempotencyLogicalKey: 'payout:create:$amount:$bucket',
     );
 
     final data = response['data'] ?? response;
@@ -109,6 +118,7 @@ class PayoutService {
     final response = await _apiClient.post(
       PayoutEndpoints.validate(uuid),
       body: body.isEmpty ? null : body,
+      idempotencyLogicalKey: 'payout:$uuid:validate',
     );
 
     final data = response['data'] ?? response;

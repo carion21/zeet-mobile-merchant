@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
@@ -150,8 +151,12 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
               : data['type']?.toString() ?? '';
           if (lifecycle != AppLifecycleState.resumed) {
             if (type == 'order.created' || type == 'new_order') {
+              // Format dense aligne sur le titre lock-screen (skill
+              // `zeet-notification-strategy` §3) : `Cmde · X FCFA · Y articles`.
+              // Le bubble est minuscule, on prefere le total au texte
+              // generique "Nouvelle commande" pour aider a prioriser.
               await OverlayService.instance.incrementBubble(
-                title: data['title']?.toString() ?? 'Nouvelle commande',
+                title: _bubbleTitleFor(data),
               );
             }
           }
@@ -339,4 +344,49 @@ class _MyAppState extends ConsumerState<MyApp> with WidgetsBindingObserver {
       },
     );
   }
+}
+
+/// Construit le titre du bubble overlay foreground, format dense aligne sur
+/// le titre lock-screen background (`fcm_service.dart::_buildIncomingOrderTitle`).
+/// Format prefere : `Cmde · 12 500 FCFA · 3 articles`. Fallback : titre backend
+/// puis "Nouvelle commande".
+String _bubbleTitleFor(Map<String, dynamic> data) {
+  // Parse defensif : metadata est un JSON string FCM.
+  int? totalFcfa;
+  int? itemsCount;
+  final dynamic meta = data['metadata'];
+  if (meta is Map) {
+    totalFcfa = (meta['total_fcfa'] ?? meta['total']) as int?;
+    itemsCount = meta['items_count'] as int?;
+  } else if (meta is String && meta.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(meta);
+      if (decoded is Map) {
+        totalFcfa = (decoded['total_fcfa'] ?? decoded['total']) as int?;
+        itemsCount = decoded['items_count'] as int?;
+      }
+    } catch (_) {}
+  }
+  totalFcfa ??= (data['total_fcfa'] ?? data['total']) as int?;
+  itemsCount ??= data['items_count'] as int?;
+
+  String fcfa(int amount) {
+    final s = amount.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final fromEnd = s.length - i;
+      if (i > 0 && fromEnd % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} FCFA';
+  }
+
+  if ((totalFcfa ?? 0) > 0 && (itemsCount ?? 0) > 0) {
+    final n = itemsCount!;
+    return 'Cmde · ${fcfa(totalFcfa!)} · $n article${n > 1 ? 's' : ''}';
+  }
+  if ((totalFcfa ?? 0) > 0) return 'Cmde · ${fcfa(totalFcfa!)}';
+  final raw = data['title']?.toString();
+  if (raw != null && raw.isNotEmpty) return raw;
+  return 'Nouvelle commande';
 }

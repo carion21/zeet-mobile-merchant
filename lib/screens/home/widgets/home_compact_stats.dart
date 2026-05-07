@@ -5,6 +5,7 @@ import 'package:zeet_ui/zeet_ui.dart';
 import 'package:merchant/core/constants/colors.dart';
 import 'package:merchant/core/constants/icons.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
+import 'package:merchant/services/navigation_service.dart';
 
 /// Bloc 3 stats compactes (Traitees aujourd'hui / Note / Paniers) sous la
 /// earnings card du home. Chaque valeur vient du `dashboardProvider`.
@@ -122,36 +123,46 @@ class HomeCompactStats extends ConsumerWidget {
           // Divider vertical
           _buildVerticalDivider(scheme),
 
-          // Paniers actifs
+          // Paniers actifs — tap → écran drill-down (CartsListScreen).
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Paniers actifs',
-                  style: TextStyle(
-                    color: textLightColor,
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                SizedBox(height: 6.h),
-                Row(
+            child: InkWell(
+              onTap: () {
+                ZeetHaptics.tap();
+                Routes.navigateTo(Routes.carts);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconManager.getIcon('shopping_cart',
-                        color: AppColors.primary, size: 18.r),
-                    SizedBox(width: 6.w),
-                    ZeetRollingCounter(
-                      value: activeCarts,
+                    Text(
+                      'Paniers actifs',
                       style: TextStyle(
-                        color: textColor,
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.bold,
+                        color: textLightColor,
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w500,
                       ),
+                    ),
+                    SizedBox(height: 6.h),
+                    Row(
+                      children: [
+                        IconManager.getIcon('shopping_cart',
+                            color: AppColors.primary, size: 18.r),
+                        SizedBox(width: 6.w),
+                        ZeetRollingCounter(
+                          value: activeCarts,
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 20.sp,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ],

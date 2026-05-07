@@ -6,6 +6,11 @@
 // - gere l'etat online + file vide (zero pixel),
 // - gere l'etat online + file non-vide (bandeau "Synchronisation").
 //
+// Pulse subtil 2s pendant l'etat offline (skill `zeet-offline-first` §7
+// et `zeet-motion-system` §3) pour rappeler "ca attend, on n'oublie pas"
+// sans crier. Le pulse s'arrete au retour en ligne — `AnimationController`
+// est dispose proprement.
+//
 // Voir skill `zeet-states-elae` §7 et `zeet-offline-first` §7.
 
 import 'package:flutter/material.dart';
@@ -33,7 +38,7 @@ class PartnerConnectivityBanner extends ConsumerWidget {
             );
 
     // 3 etats possibles :
-    // 1) offline → bandeau danger (+ count si en queue)
+    // 1) offline → bandeau danger pulsant (+ count si en queue)
     // 2) online + queue > 0 → bandeau warning "Synchronisation en cours"
     // 3) online + queue = 0 → rien (zero pixel)
     if (!isOnline) {
@@ -44,6 +49,7 @@ class PartnerConnectivityBanner extends ConsumerWidget {
             ? 'Hors ligne · $queueCount action${queueCount > 1 ? 's' : ''} en attente'
             : 'Mode hors ligne',
         onTap: queueCount > 0 ? () => _openPending() : null,
+        pulse: true,
       );
     }
 
@@ -64,12 +70,13 @@ class PartnerConnectivityBanner extends ConsumerWidget {
   }
 }
 
-class _BannerShell extends StatelessWidget {
+class _BannerShell extends StatefulWidget {
   const _BannerShell({
     required this.color,
     required this.icon,
     required this.label,
     this.onTap,
+    this.pulse = false,
   });
 
   final Color color;
@@ -77,15 +84,60 @@ class _BannerShell extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
+  /// Active une pulsation douce 2s (alpha icone + scale subtle). Reserve a
+  /// l'etat offline pour rappeler la situation sans crier (skill
+  /// `zeet-motion-system` §3 — respiration, pas alarme).
+  final bool pulse;
+
+  @override
+  State<_BannerShell> createState() => _BannerShellState();
+}
+
+class _BannerShellState extends State<_BannerShell>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pulse) _startPulse();
+  }
+
+  @override
+  void didUpdateWidget(_BannerShell old) {
+    super.didUpdateWidget(old);
+    if (widget.pulse && _pulseCtrl == null) {
+      _startPulse();
+    } else if (!widget.pulse && _pulseCtrl != null) {
+      _pulseCtrl?.dispose();
+      _pulseCtrl = null;
+    }
+  }
+
+  void _startPulse() {
+    final disable = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disable) return; // a11y reduced motion : pas de pulse
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    final inner = Semantics(
       liveRegion: true,
-      label: label,
+      label: widget.label,
       child: Material(
-        color: color,
+        color: widget.color,
         child: InkWell(
-          onTap: onTap,
+          onTap: widget.onTap,
           child: SafeArea(
             bottom: false,
             child: Padding(
@@ -96,11 +148,11 @@ class _BannerShell extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  Icon(icon, size: 16, color: ZeetColors.surface),
+                  Icon(widget.icon, size: 16, color: ZeetColors.surface),
                   const SizedBox(width: ZeetSpacing.x2),
                   Flexible(
                     child: Text(
-                      label,
+                      widget.label,
                       style: const TextStyle(
                         color: ZeetColors.surface,
                         fontSize: 13,
@@ -108,7 +160,7 @@ class _BannerShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (onTap != null) ...<Widget>[
+                  if (widget.onTap != null) ...<Widget>[
                     const SizedBox(width: ZeetSpacing.x2),
                     const Icon(
                       Icons.chevron_right_rounded,
@@ -122,6 +174,18 @@ class _BannerShell extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    final ctrl = _pulseCtrl;
+    if (ctrl == null) return inner;
+    return AnimatedBuilder(
+      animation: ctrl,
+      builder: (context, child) {
+        // Opacity oscille entre 0.85 et 1.0 — visible mais pas distrayant.
+        final alpha = 0.85 + 0.15 * ctrl.value;
+        return Opacity(opacity: alpha, child: child);
+      },
+      child: inner,
     );
   }
 }

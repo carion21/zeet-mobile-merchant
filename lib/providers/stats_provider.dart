@@ -359,3 +359,22 @@ final topCustomersStatsProvider = Provider<List<TopCustomer>>((ref) {
 final productRankingProvider = Provider<ProductRanking?>((ref) {
   return ref.watch(productStatsProvider).ranking;
 });
+
+/// Map `productId -> rank` pour les N meilleurs produits (defaut N = 5).
+///
+/// Utilise par la liste produits pour afficher un badge "🔥 Top X" sur
+/// les meilleurs vendeurs (Skill `zeet-neuro-ux` social proof + insight
+/// performance). Retourne une map vide si le ranking n'est pas charge.
+///
+/// Usage cote screen :
+///   final tops = ref.watch(topProductRanksProvider);
+///   final rank = tops[product.id];   // 1, 2, 3, ... ou null
+final topProductRanksProvider = Provider<Map<int, int>>((ref) {
+  final ranking = ref.watch(productRankingProvider);
+  if (ranking == null) return const <int, int>{};
+  final Map<int, int> ranks = <int, int>{};
+  for (final item in ranking.items.take(5)) {
+    if (item.rank > 0 && item.id > 0) ranks[item.id] = item.rank;
+  }
+  return ranks;
+});

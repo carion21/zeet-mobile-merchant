@@ -31,6 +31,7 @@ import 'package:merchant/models/product_model.dart';
 import 'package:merchant/providers/category_provider.dart';
 import 'package:merchant/providers/connectivity_provider.dart';
 import 'package:merchant/providers/product_provider.dart';
+import 'package:merchant/providers/stats_provider.dart';
 import 'package:merchant/screens/products/detail.dart';
 import 'package:merchant/services/api_client.dart';
 import 'package:merchant/services/navigation_service.dart';
@@ -50,6 +51,66 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final GlobalKey<ZeetFreshnessChipLocalState> _freshKey = GlobalKey();
   bool _isSearching = false;
 
+  /// Selection multi-produits : declenche par long-press sur un tile.
+  /// Skill `zeet-pos-ergonomics` §gesture-grammar : long-press ouvre le
+  /// mode selection, tap sur tile toggle l'inclusion. AppBar morph vers
+  /// barre d'actions bulk (activer / desactiver / supprimer / fermer).
+  final Set<int> _selectedIds = <int>{};
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  void _toggleSelection(int id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+    ZeetHaptics.tap();
+  }
+
+  void _exitSelection() {
+    setState(_selectedIds.clear);
+  }
+
+  Future<void> _bulkRun(String action, String label) async {
+    if (_selectedIds.isEmpty) return;
+    final ids = _selectedIds.toList();
+    final ok = await ref
+        .read(productsListProvider.notifier)
+        .bulkAction(ids, action);
+    if (!mounted) return;
+    if (ok) {
+      ZeetHaptics.success();
+      AppToast.showSuccess(
+        context: context,
+        message: '${ids.length} produit${ids.length > 1 ? 's' : ''} $label.',
+      );
+      _exitSelection();
+    } else {
+      ZeetHaptics.error();
+      AppToast.showError(
+        context: context,
+        message: 'Action en masse impossible. Reessayez.',
+      );
+    }
+  }
+
+  Future<void> _confirmBulkDelete() async {
+    final ids = _selectedIds.toList();
+    final confirm = await AppPopup.showConfirmation(
+      context: context,
+      title: 'Supprimer ${ids.length} produit${ids.length > 1 ? 's' : ''} ?',
+      message:
+          "L'action est definitive. Les variantes et options associees seront aussi supprimees.",
+      confirmLabel: 'Supprimer',
+      cancelLabel: 'Annuler',
+      isDestructive: true,
+    );
+    if (!confirm || !mounted) return;
+    await _bulkRun('delete', 'supprime${ids.length > 1 ? 's' : ''}');
+  }
+
   /// Refresh unifié : recharge + bumpe la chip de fraîcheur.
   Future<void> _refreshAll() async {
     await ref.read(productsListProvider.notifier).refresh();
@@ -63,6 +124,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       ref.read(productsListProvider.notifier).load();
       // Charge les categories pour les filtres + bottom sheet de creation.
       ref.invalidate(categoriesSelectProvider);
+      // Charge le ranking produits (top 5) pour afficher les badges
+      // "🔥 Top X" sur les meilleurs vendeurs (Skill `zeet-neuro-ux`).
+      ref
+          .read(productStatsProvider.notifier)
+          .loadRanking(period: 'month', limit: 5);
     });
     _scrollController.addListener(_onScroll);
   }
@@ -91,50 +157,87 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 
     return Scaffold(
       backgroundColor: scheme.surface,
-      appBar: ZeetAppBar(
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Rechercher un produit…',
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (query) {
-                  ref
-                      .read(productsListProvider.notifier)
-                      .searchProducts(query);
+      appBar: _selectionMode
+          ? ZeetAppBar(
+              title: Text('${_selectedIds.length} sélectionné'
+                  '${_selectedIds.length > 1 ? 's' : ''}'),
+              leading: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Fermer',
+                onPressed: () {
+                  ZeetHaptics.tap();
+                  _exitSelection();
                 },
-              )
-            : const Text('Produits'),
-        actions: <Widget>[
-          Padding(
-            padding: EdgeInsets.only(right: 4.w),
-            child: Center(
-              child: ZeetFreshnessChipLocal(
-                key: _freshKey,
-                onRefresh: _refreshAll,
               ),
+              actions: <Widget>[
+                IconButton(
+                  tooltip: 'Activer',
+                  icon: const Icon(Icons.visibility_rounded),
+                  onPressed: () => _bulkRun('activate',
+                      _selectedIds.length > 1 ? 'actives' : 'active'),
+                ),
+                IconButton(
+                  tooltip: 'Désactiver',
+                  icon: const Icon(Icons.visibility_off_outlined),
+                  onPressed: () => _bulkRun('deactivate',
+                      _selectedIds.length > 1 ? 'desactives' : 'desactive'),
+                ),
+                IconButton(
+                  tooltip: 'Supprimer',
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: ZeetColors.danger),
+                  onPressed: _confirmBulkDelete,
+                ),
+              ],
+            )
+          : ZeetAppBar(
+              title: _isSearching
+                  ? TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Rechercher un produit…',
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (query) {
+                        ref
+                            .read(productsListProvider.notifier)
+                            .searchProducts(query);
+                      },
+                    )
+                  : const Text('Produits'),
+              actions: <Widget>[
+                Padding(
+                  padding: EdgeInsets.only(right: 4.w),
+                  child: Center(
+                    child: ZeetFreshnessChipLocal(
+                      key: _freshKey,
+                      onRefresh: _refreshAll,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(_isSearching
+                      ? Icons.close_rounded
+                      : Icons.search_rounded),
+                  tooltip: _isSearching
+                      ? 'Fermer la recherche'
+                      : 'Rechercher',
+                  onPressed: () {
+                    ZeetHaptics.tap();
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) {
+                        _searchController.clear();
+                        ref
+                            .read(productsListProvider.notifier)
+                            .searchProducts(null);
+                      }
+                    });
+                  },
+                ),
+              ],
             ),
-          ),
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
-            tooltip: _isSearching ? 'Fermer la recherche' : 'Rechercher',
-            onPressed: () {
-              ZeetHaptics.tap();
-              setState(() {
-                _isSearching = !_isSearching;
-                if (!_isSearching) {
-                  _searchController.clear();
-                  ref
-                      .read(productsListProvider.notifier)
-                      .searchProducts(null);
-                }
-              });
-            },
-          ),
-        ],
-      ),
       body: Column(
         children: <Widget>[
           _CategoryFilterBar(
@@ -195,14 +298,22 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 child: const ZeetSkeleton(height: 104),
               );
             }
+            final product = state.products[index];
+            final ranks = ref.watch(topProductRanksProvider);
+            final selected = _selectedIds.contains(product.id);
             return _ProductTile(
-              product: state.products[index],
-              onTap: () => _openProductDetail(state.products[index]),
-              onToggleAvailability: () =>
-                  _toggleAvailability(state.products[index]),
-              onEdit: () => _openProductDetail(state.products[index]),
-              onDuplicate: () => _duplicateProduct(state.products[index]),
-              onDelete: () => _deleteProduct(state.products[index]),
+              product: product,
+              rank: ranks[product.id],
+              isSelected: selected,
+              selectionMode: _selectionMode,
+              onTap: _selectionMode
+                  ? () => _toggleSelection(product.id)
+                  : () => _openProductDetail(product),
+              onLongPress: () => _toggleSelection(product.id),
+              onToggleAvailability: () => _toggleAvailability(product),
+              onEdit: () => _openProductDetail(product),
+              onDuplicate: () => _duplicateProduct(product),
+              onDelete: () => _deleteProduct(product),
             );
           },
         ),
@@ -467,14 +578,30 @@ class _ProductTile extends StatelessWidget {
     required this.onEdit,
     required this.onDuplicate,
     required this.onDelete,
+    this.rank,
+    this.onLongPress,
+    this.isSelected = false,
+    this.selectionMode = false,
   });
 
   final Product product;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback onToggleAvailability;
   final VoidCallback onEdit;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+
+  /// Position dans le ranking produits (1 = meilleur). null si hors top 5.
+  /// Skill `zeet-neuro-ux` social proof : "🔥 Top X" affiche un badge
+  /// orange en overlay sur la vignette.
+  final int? rank;
+
+  /// Mode selection actif : la tile affiche une checkbox + style focus
+  /// quand `isSelected`. Tap → toggle (pas d'edition). Long-press toujours
+  /// disponible pour entrer/sortir du mode.
+  final bool isSelected;
+  final bool selectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -484,50 +611,103 @@ class _ProductTile extends StatelessWidget {
     return Container(
       margin: EdgeInsets.only(bottom: 10.h),
       decoration: BoxDecoration(
-        color: scheme.surface,
+        color: isSelected
+            ? AppColors.primary.withValues(alpha: 0.08)
+            : scheme.surface,
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: scheme.outlineVariant),
+        border: Border.all(
+          color: isSelected ? AppColors.primary : scheme.outlineVariant,
+          width: isSelected ? 2 : 1,
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12.r),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: EdgeInsets.all(12.w),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              // Vignette produit
-              Container(
-                width: 64.w,
-                height: 64.h,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8.r),
+              if (selectionMode) ...<Widget>[
+                Icon(
+                  isSelected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: isSelected
+                      ? AppColors.primary
+                      : scheme.onSurfaceVariant,
+                  size: 24.sp,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: product.mainImage != null &&
-                        product.mainImage!.isNotEmpty
-                    ? Hero(
-                        tag: 'product-${product.id}',
-                        child: ZeetImage(
-                          url: product.mainImage,
-                          width: 64.w,
-                          height: 64.h,
-                          fit: BoxFit.cover,
-                          errorWidget: Icon(
-                            Icons.broken_image_outlined,
-                            color: scheme.onSurfaceVariant,
-                            size: 24.r,
+                SizedBox(width: 10.w),
+              ],
+              // Vignette produit + badge ranking si top 5.
+              Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  Container(
+                    width: 64.w,
+                    height: 64.h,
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: product.mainImage != null &&
+                            product.mainImage!.isNotEmpty
+                        ? Hero(
+                            tag: 'product-${product.id}',
+                            child: ZeetImage(
+                              url: product.mainImage,
+                              width: 64.w,
+                              height: 64.h,
+                              fit: BoxFit.cover,
+                              errorWidget: Icon(
+                                Icons.broken_image_outlined,
+                                color: scheme.onSurfaceVariant,
+                                size: 24.r,
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Icon(
+                              Icons.restaurant_outlined,
+                              color: scheme.onSurfaceVariant,
+                              size: 24.r,
+                            ),
+                          ),
+                  ),
+                  if (rank != null && rank! >= 1 && rank! <= 5)
+                    Positioned(
+                      top: -6,
+                      left: -6,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6.w,
+                          vertical: 2.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          '🔥 ${rank == 1 ? "Top vente" : "Top $rank"}',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.sp,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      )
-                    : Center(
-                        child: Icon(
-                          Icons.restaurant_outlined,
-                          color: scheme.onSurfaceVariant,
-                          size: 24.r,
-                        ),
                       ),
+                    ),
+                ],
               ),
               SizedBox(width: 12.w),
               // Nom + prix + categorie + indicateurs

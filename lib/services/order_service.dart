@@ -182,10 +182,15 @@ class OrderService {
   /// Confirme une commande en attente.
   ///
   /// [estimatedMinutes] : temps estime de preparation (ex: 30 minutes).
+  ///
+  /// L'appel utilise un `Idempotency-Key` stable (UUID v4 persiste 24h) pour
+  /// garantir que retry reseau ou double-tap ne provoque pas de doublon
+  /// serveur. Cle logique : `order:{id}:confirm`.
   Future<Order> confirmOrder(int orderId, {int estimatedMinutes = 30}) async {
     final response = await _apiClient.post(
       OrderEndpoints.confirm(orderId.toString()),
       body: {'estimated_minutes': estimatedMinutes},
+      idempotencyLogicalKey: 'order:$orderId:confirm',
     );
 
     return Order.fromJson(response['data'] as Map<String, dynamic>);
@@ -197,10 +202,13 @@ class OrderService {
   /// Passe la commande en preparation (declenche le dispatch rider).
   ///
   /// [estimatedMinutes] : temps estime restant (ex: 20 minutes).
+  ///
+  /// `Idempotency-Key` cle logique : `order:{id}:preparing`.
   Future<Order> markPreparing(int orderId, {int estimatedMinutes = 20}) async {
     final response = await _apiClient.post(
       OrderEndpoints.preparing(orderId.toString()),
       body: {'estimated_minutes': estimatedMinutes},
+      idempotencyLogicalKey: 'order:$orderId:preparing',
     );
 
     return Order.fromJson(response['data'] as Map<String, dynamic>);
@@ -210,9 +218,12 @@ class OrderService {
   // POST /v1/partner/orders/:id/ready
   // ---------------------------------------------------------------------------
   /// Marque la commande comme prete pour collecte par le rider.
+  ///
+  /// `Idempotency-Key` cle logique : `order:{id}:ready`.
   Future<Order> markReady(int orderId) async {
     final response = await _apiClient.post(
       OrderEndpoints.ready(orderId.toString()),
+      idempotencyLogicalKey: 'order:$orderId:ready',
     );
 
     return Order.fromJson(response['data'] as Map<String, dynamic>);
@@ -239,6 +250,7 @@ class OrderService {
     final response = await _apiClient.post(
       OrderEndpoints.cancel(orderId.toString()),
       body: {'cancel_reason': trimmed},
+      idempotencyLogicalKey: 'order:$orderId:cancel',
     );
 
     return Order.fromJson(response['data'] as Map<String, dynamic>);

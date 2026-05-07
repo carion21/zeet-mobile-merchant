@@ -63,7 +63,18 @@ class HomeEarningsCard extends ConsumerWidget {
       child: Container(
         margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
         decoration: BoxDecoration(
-          color: background,
+          // Degrade subtil orange→ambre 5% (skill `zeet-design-system`
+          // §identite : signature visuelle ZEET sans nuire au contraste).
+          // Le degrade se voit a peine — il donne un sentiment "card vivante"
+          // sans saturer. Ratio contraste preserve (>14:1).
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[
+              background,
+              ZeetColors.primary.withValues(alpha: isDark ? 0.06 : 0.04),
+            ],
+          ),
           borderRadius: BorderRadius.circular(ZeetRadius.md),
           border: Border.all(color: borderColor, width: 1),
         ),

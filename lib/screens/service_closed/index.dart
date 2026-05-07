@@ -33,6 +33,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:merchant/core/constants/copy.dart';
 import 'package:merchant/core/widgets/toastification.dart';
+import 'package:merchant/models/dashboard_model.dart';
 import 'package:merchant/providers/dashboard_provider.dart';
 import 'package:merchant/providers/orders_provider.dart';
 import 'package:merchant/providers/profile_provider.dart';
@@ -160,6 +161,24 @@ class _ServiceClosedRecapScreenState
           accent: ZeetColors.warning,
         ),
     ];
+
+    // Insight "Top vente du service" \u2014 exploite dashboard.topProducts (1er
+    // produit le plus commande). Affiche en card stagger en bas, accent
+    // primary (orange ZEET) avec icone fire pour glanceability.
+    final TopProduct? topProduct =
+        (summary != null && summary.topProducts.isNotEmpty)
+            ? summary.topProducts.first
+            : null;
+    if (topProduct != null && topProduct.ordersCount > 0) {
+      stats.add(_StatData(
+        icon: Icons.local_fire_department_rounded,
+        label: 'Top vente : ${topProduct.name}',
+        value: topProduct.ordersCount.toDouble(),
+        fractionDigits: 0,
+        suffix: topProduct.ordersCount > 1 ? ' cmdes' : ' cmde',
+        accent: ZeetColors.primary,
+      ));
+    }
 
     return Scaffold(
       backgroundColor: bg,

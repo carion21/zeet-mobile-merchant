@@ -45,6 +45,11 @@ enum QueuedActionType {
   markReady,
   cancelOrder,
   signalRupture,
+  // Payouts (financiers) — partagent la queue offline pour beneficier du
+  // retry exponentiel + dead letter. La cle metier (uuid payout) est
+  // stockee dans le `payload` JSON, `orderId` est inutilise (force a 0).
+  requestPayout,
+  validatePayout,
 }
 
 enum QueuedActionStatus {

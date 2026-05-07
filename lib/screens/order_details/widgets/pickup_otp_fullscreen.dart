@@ -57,6 +57,10 @@ class PickupOtpFullscreen extends ConsumerStatefulWidget {
 class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
   Timer? _cooldownTicker;
 
+  /// Garde-fou : on ne dicte le code automatiquement qu'une seule fois par
+  /// session d'ouverture de l'ecran. Reset si le code change (renvoi).
+  String? _autoSpokenCode;
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +106,18 @@ class _PickupOtpFullscreenState extends ConsumerState<PickupOtpFullscreen> {
     final hasCode = code != null && code.isNotEmpty;
     final cooldownSec = state.otpResendCooldownSeconds;
     final canResend = state.canResendOtp;
+
+    // Auto-dictation au 1er affichage ou apres un renvoi (code change).
+    // Skill `zeet-pos-ergonomics` §2.9 : cuisine bruyante, le partner ne
+    // doit pas avoir a chercher le bouton "Lire" — l'app dicte d'elle-meme.
+    if (hasCode && _autoSpokenCode != code) {
+      _autoSpokenCode = code;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ZeetHaptics.success();
+        TtsService.instance.speakOtp(code);
+      });
+    }
 
     return Scaffold(
       backgroundColor: scheme.surface,
