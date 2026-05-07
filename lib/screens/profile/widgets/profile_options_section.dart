@@ -237,16 +237,16 @@ class ProfileOptionsSection extends ConsumerWidget {
       ],
     );
   }
-}
 
-Future<void> _openExternal(BuildContext context, String url) async {
-  final uri = Uri.parse(url);
-  final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!launched && context.mounted) {
-    AppToast.showError(
-      context: context,
-      message: 'Impossible d\'ouvrir le lien.',
-    );
+  Future<void> _openExternal(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      AppToast.showError(
+        context: context,
+        message: 'Impossible d\'ouvrir le lien.',
+      );
+    }
   }
 }
 
